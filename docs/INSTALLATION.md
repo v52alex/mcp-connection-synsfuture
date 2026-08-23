@@ -181,3 +181,21 @@ Usa `CONFIRM_COMPOSE_UP`, `CONFIRM_COMPOSE_STOP`,
 `CONFIRM_COMPOSE_DEPLOY` o `CONFIRM_COMPOSE_REMOVE`, según la operación.
 `plan_compose_deployment_docker` y `audit_compose_project_docker` no mutan el
 entorno.
+
+También están disponibles la inspección local y el build de imágenes:
+
+```text
+mcp-connection-synsfuture.inspect_docker_project_docker(
+  project_path="/ruta/al/proyecto"
+)
+
+mcp-connection-synsfuture.build_image_docker(
+  profile_id="docker-remote1",
+  project_path="/ruta/al/proyecto",
+  image_name="mi-imagen"
+)
+```
+
+El build se planifica por defecto y requiere `CONFIRM_BUILD` con
+`dry_run=false` para ejecutarse. `list_audit_events_docker` devuelve eventos
+sanitizados cuando exista un almacén de auditoría configurado.
