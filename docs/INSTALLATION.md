@@ -133,3 +133,20 @@ mcp-connection-synsfuture.container_logs_docker(
   tail=100
 )
 ```
+
+Las herramientas mutables requieren confirmación explícita. La creación se
+planifica por defecto:
+
+```text
+mcp-connection-synsfuture.create_container_docker(
+  profile_id="docker-remote1",
+  image_reference="nginx:latest",
+  container_name="web"
+)
+```
+
+Para ejecutar se debe indicar `dry_run=false` y
+`confirmation="CONFIRM_CREATE"`. Iniciar, detener, reiniciar y eliminar usan
+respectivamente `CONFIRM_START`, `CONFIRM_STOP`, `CONFIRM_RESTART` y
+`CONFIRM_RM`. Solo se permiten operaciones sobre contenedores gestionados por
+el MCP.
