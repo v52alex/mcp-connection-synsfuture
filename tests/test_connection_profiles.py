@@ -132,3 +132,16 @@ async def test_reports_missing_ssh_agent_before_remote_validation(
     assert result.connected is False
     assert "agente SSH" in result.message
     assert runner.calls == [["docker", "context", "inspect", "docker-remote1"]]
+
+
+def test_registers_profile_metadata_without_overwriting_existing_file(tmp_path: Path) -> None:
+    path = profile_file(tmp_path, "")
+    service = ConnectionProfileService(StubRunner([]), ProfileRepository(path))
+
+    result = service.register("vps", "vps", "vps", ["read"])
+    duplicate = service.register("vps", "vps", "vps", ["read"])
+
+    assert result.state is ConnectionState.PROFILE_REGISTERED
+    assert result.profiles_file == str(path)
+    assert '[profiles.vps]' in path.read_text(encoding="utf-8")
+    assert duplicate.state is ConnectionState.PROFILE_EXISTS

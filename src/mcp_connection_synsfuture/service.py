@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any, Protocol
 
+from pydantic import ValidationError
+
 from .models import ConnectionProfile, ConnectionState, ConnectionValidationResult, ProfileType
 from .process import CommandResult
 from .profiles import ProfileRepository, validate_profile_shape
@@ -21,14 +23,19 @@ class ConnectionProfileService:
         self._profiles = profiles
         self._timeout = timeout
 
+    @property
+    def profiles_path(self) -> Path:
+        return self._profiles.path
+
     async def connect(self, profile_id: str) -> ConnectionValidationResult:
         profile = self._profiles.get(profile_id)
         if profile is None:
             return self._result(
                 profile_id,
                 ConnectionState.PROFILE_NOT_FOUND,
-                "The requested connection profile does not exist or is invalid.",
-                "Create the profile locally and add it to the authorized profile file.",
+                f"El perfil no existe o no es válido. Archivo autorizado: {self._profiles.path}.",
+                "Proporciona profile_id, docker_context y ssh_profile usando "
+                "register_connection_profile; el MCP lo registrará automáticamente.",
             )
         if not profile.enabled:
             return self._result(
@@ -56,6 +63,59 @@ class ConnectionProfileService:
                 profile,
             )
         return await self._connect_docker(profile)
+
+    def register(
+        self,
+        profile_id: str,
+        docker_context: str,
+        ssh_profile: str | None,
+        capabilities: list[str],
+    ) -> ConnectionValidationResult:
+        """Register safe local metadata; never stores credentials or keys."""
+
+        try:
+            profile = ConnectionProfile(
+                profile_id=profile_id,
+                type=ProfileType.DOCKER_CONTEXT,
+                docker_context=docker_context,
+                ssh_profile=ssh_profile or docker_context,
+                enabled=True,
+                capabilities=tuple(capabilities),
+            )
+        except ValidationError as error:
+            message = error.errors()[0].get("msg", "configuración inválida")
+            return self._result(
+                profile_id,
+                ConnectionState.INVALID_CONFIGURATION,
+                f"El perfil no es válido: {message}.",
+                "Corrige el identificador y los datos del Docker context.",
+            )
+        registration_error = self._profiles.register(profile)
+        if registration_error == "profile_exists":
+            return self._result(
+                profile_id,
+                ConnectionState.PROFILE_EXISTS,
+                "El perfil ya existe y no fue sobrescrito.",
+                "Usa otro profile_id o edita la configuración local de forma explícita.",
+                profile,
+            )
+        if registration_error:
+            return self._result(
+                profile_id,
+                ConnectionState.INVALID_CONFIGURATION,
+                "No se pudo registrar el perfil local.",
+                "Corrige los permisos o el formato del archivo de perfiles.",
+                profile,
+            )
+        return self._result(
+            profile_id,
+            ConnectionState.PROFILE_REGISTERED,
+            "Perfil registrado localmente. El MCP todavía debe validar el contexto y la conexión.",
+            self._setup_action(profile),
+            profile,
+            profiles_file=str(self._profiles.path),
+            profile_example=self._profile_example(profile),
+        )
 
     async def _connect_docker(self, profile: ConnectionProfile) -> ConnectionValidationResult:
         assert profile.docker_context is not None
@@ -236,8 +296,8 @@ class ConnectionProfileService:
         markers = ("permission denied", "publickey", "authentication failed")
         return any(marker in stderr.lower() for marker in markers)
 
-    @staticmethod
     def _result(
+        self,
         profile_id: str,
         state: ConnectionState,
         message: str,
@@ -245,6 +305,8 @@ class ConnectionProfileService:
         profile: ConnectionProfile | None = None,
         transport: str | None = None,
         connected: bool = False,
+        profiles_file: str | None = None,
+        profile_example: str | None = None,
     ) -> ConnectionValidationResult:
         return ConnectionValidationResult(
             profile_id=profile_id,
@@ -256,8 +318,33 @@ class ConnectionProfileService:
             capabilities=profile.capabilities if profile else (),
             message=message,
             recommended_action=action,
+            profiles_file=profiles_file or str(self._profiles.path),
+            profile_example=profile_example,
+        )
+
+    @staticmethod
+    def _profile_example(profile: ConnectionProfile) -> str:
+        capabilities = ", ".join(f'"{item}"' for item in profile.capabilities)
+        return (
+            f"[profiles.{profile.profile_id}]\n"
+            'type = "docker-context"\n'
+            f'docker_context = "{profile.docker_context}"\n'
+            f'ssh_profile = "{profile.ssh_profile}"\n'
+            "enabled = true\n"
+            f"capabilities = [{capabilities}]"
+        )
+
+    @staticmethod
+    def _setup_action(profile: ConnectionProfile) -> str:
+        return (
+            f"Configura el alias SSH '{profile.ssh_profile}' y crea el Docker context "
+            f"'{profile.docker_context}' con host=ssh://{profile.ssh_profile}; después "
+            "vuelve a ejecutar connect_connection_profile. Consulta docs/PROFILE_SETUP.md."
         )
 
 
 def default_profile_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "profiles.toml"
+    config_root = os.environ.get("XDG_CONFIG_HOME")
+    if config_root:
+        return Path(config_root) / "mcp-connection-synsfuture" / "profiles.toml"
+    return Path.home() / ".config" / "mcp-connection-synsfuture" / "profiles.toml"

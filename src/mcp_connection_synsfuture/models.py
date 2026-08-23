@@ -12,6 +12,8 @@ class ProfileType(StrEnum):
 
 class ConnectionState(StrEnum):
     PROFILE_REQUIRED = "profile_required"
+    PROFILE_REGISTERED = "profile_registered"
+    PROFILE_EXISTS = "profile_exists"
     PROFILE_NOT_FOUND = "profile_not_found"
     PROFILE_DISABLED = "profile_disabled"
     INVALID_CONFIGURATION = "invalid_configuration"
@@ -52,3 +54,5 @@ class ConnectionValidationResult(BaseModel):
     message: str
     recommended_action: str | None = None
     documentation_hint: str | None = None
+    profiles_file: str | None = None
+    profile_example: str | None = None

@@ -15,6 +15,10 @@ class ProfileRepository:
     def __init__(self, path: Path) -> None:
         self._path = path
 
+    @property
+    def path(self) -> Path:
+        return self._path
+
     def get(self, profile_id: str) -> ConnectionProfile | None:
         if not PROFILE_ID_PATTERN.fullmatch(profile_id):
             return None
@@ -34,6 +38,44 @@ class ProfileRepository:
             return ConnectionProfile(profile_id=profile_id, **entry)
         except ValidationError:
             return None
+
+    def register(self, profile: ConnectionProfile) -> str | None:
+        """Append a new profile without overwriting existing configuration."""
+
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        if self._path.exists():
+            try:
+                raw = tomllib.loads(self._path.read_text(encoding="utf-8"))
+            except (OSError, tomllib.TOMLDecodeError) as error:
+                return f"The profiles file is not valid TOML: {error}"
+            profiles = raw.get("profiles")
+            if profiles is not None and not isinstance(profiles, dict):
+                return "The profiles section must be a TOML table."
+            if isinstance(profiles, dict) and profile.profile_id in profiles:
+                return "profile_exists"
+        try:
+            with self._path.open("a", encoding="utf-8") as file:
+                if self._path.stat().st_size > 0:
+                    file.write("\n")
+                file.write(self._profile_toml(profile))
+        except OSError as error:
+            return str(error)
+        return None
+
+    @staticmethod
+    def _profile_toml(profile: ConnectionProfile) -> str:
+        capabilities = ", ".join(f'"{item}"' for item in profile.capabilities)
+        lines = [
+            f"[profiles.{profile.profile_id}]",
+            f'type = "{profile.type.value}"',
+            f'docker_context = "{profile.docker_context}"',
+        ]
+        if profile.ssh_profile:
+            lines.append(f'ssh_profile = "{profile.ssh_profile}"')
+        lines.extend(
+            [f"enabled = {str(profile.enabled).lower()}", f"capabilities = [{capabilities}]"]
+        )
+        return "\n".join(lines) + "\n"
 
 
 def validate_profile_shape(profile: ConnectionProfile) -> str | None:

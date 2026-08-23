@@ -14,12 +14,12 @@ from .service import ConnectionProfileService, default_profile_path
 mcp = MCPServer(
     "mcp-connection-synsfuture",
     instructions=(
-        "Validate only preconfigured connection profiles. The MCP never creates or "
-        "modifies contexts, SSH aliases, keys, or remote infrastructure. If the user "
+    "Manage local connection-profile metadata and validate preconfigured contexts. "
+    "The MCP never creates SSH keys, modifies SSH aliases, or changes remote infrastructure. "
         "mentions only this MCP without naming a tool, explain that no tool was "
         "selected and show this example: "
         "mcp-connection-synsfuture.connect_connection_profile(profile_id='docker-remote1'). "
-        "The available tool is connect_connection_profile and it requires an explicit "
+        "Available tools are connect_connection_profile and register_connection_profile. "
         "profile_id. Never infer profile_id from previous messages or select a profile "
         "automatically; ask the user for the profile identifier when it is absent from "
         "the latest request. For real Codex requests, invoke the MCP tool directly and "
@@ -35,6 +35,13 @@ READ_ONLY_EXTERNAL = ToolAnnotations(
     open_world_hint=True,
 )
 
+LOCAL_PROFILE_WRITE = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=False,
+    open_world_hint=False,
+)
+
 
 def create_service() -> ConnectionProfileService:
     configured_path = os.getenv("MCP_CONNECTION_PROFILES_FILE")
@@ -46,6 +53,7 @@ def create_service() -> ConnectionProfileService:
 async def connect_connection_profile(profile_id: str | None = None) -> ConnectionValidationResult:
     """Validate one preconfigured profile; profile_id is its connection-context name."""
 
+    service = create_service()
     if not profile_id:
         return ConnectionValidationResult(
             profile_id=None,
@@ -57,12 +65,31 @@ async def connect_connection_profile(profile_id: str | None = None) -> Connectio
                 "validar. Ejemplo: profile_id=\"docker-remote1\"."
             ),
             recommended_action=(
-                "Indica un profile_id explícito. Para más información, consulta "
-                "README.md y docs/PROFILE_SETUP.md del proyecto."
+                "Indica un profile_id explícito o usa register_connection_profile para "
+                "registrarlo. Para más información, consulta README.md y "
+                "docs/PROFILE_SETUP.md del proyecto."
             ),
             documentation_hint="Consulta README.md y docs/PROFILE_SETUP.md.",
+            profiles_file=str(service.profiles_path),
         )
-    return await create_service().connect(profile_id)
+    return await service.connect(profile_id)
+
+
+@mcp.tool(name="register_connection_profile", annotations=LOCAL_PROFILE_WRITE)
+async def register_connection_profile(
+    profile_id: str,
+    docker_context: str,
+    ssh_profile: str | None = None,
+    capabilities: list[str] | None = None,
+) -> ConnectionValidationResult:
+    """Register safe Docker context metadata in the local authorized profile file."""
+
+    return create_service().register(
+        profile_id=profile_id,
+        docker_context=docker_context,
+        ssh_profile=ssh_profile,
+        capabilities=capabilities or ["read"],
+    )
 
 
 def run_server() -> None:
