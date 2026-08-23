@@ -188,6 +188,11 @@ inspect_image_docker(profile_id, image_reference)
 list_containers_docker(profile_id)
 inspect_container_docker(profile_id, container_name)
 container_logs_docker(profile_id, container_name, tail?)
+create_container_docker(profile_id, image_reference, container_name, ...)
+start_container_docker(profile_id, container_name, confirmation?)
+stop_container_docker(profile_id, container_name, confirmation?)
+restart_container_docker(profile_id, container_name, confirmation?)
+remove_container_docker(profile_id, container_name, confirmation?)
 ```
 
 `profile_id` es el identificador del perfil de conexión preconfigurado. En un
@@ -255,6 +260,12 @@ mcp-connection-synsfuture.list_connection_profiles()
 
 La respuesta incluye solo metadata autorizada y sanitizada: `profile_id`, tipo,
 Docker context, alias SSH, capacidades y estado habilitado.
+
+Las mutaciones de contenedores están protegidas. Crear usa `dry_run=true` por
+defecto y requiere `confirmation="CONFIRM_CREATE"` junto con `dry_run=false`.
+Las operaciones de ciclo de vida requieren `CONFIRM_START`, `CONFIRM_STOP`,
+`CONFIRM_RESTART` o `CONFIRM_RM`. Solo se modifican contenedores creados y
+marcados por el MCP.
 
 Todas las herramientas devuelven también `documentation_hint` con el mensaje
 `Más información: consulta la documentación del MCP.`
