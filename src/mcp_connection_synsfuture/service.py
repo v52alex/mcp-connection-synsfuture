@@ -118,6 +118,33 @@ class ConnectionProfileService:
             profile_example=self._profile_example(profile),
         )
 
+    def remove(self, profile_id: str) -> ConnectionValidationResult:
+        """Remove only local profile metadata; never delete connection resources."""
+
+        error = self._profiles.remove(profile_id)
+        if error == "profile_not_found":
+            return self._result(
+                profile_id,
+                ConnectionState.PROFILE_NOT_FOUND,
+                f"El perfil no existe en {self._profiles.path}.",
+                "Verifica el profile_id o regístralo con register_connection_profile.",
+            )
+        if error:
+            return self._result(
+                profile_id,
+                ConnectionState.INVALID_CONFIGURATION,
+                "No se pudo eliminar el perfil local porque el archivo no es válido "
+                "o no se puede escribir.",
+                "Corrige los permisos o el formato TOML del archivo de perfiles.",
+            )
+        return self._result(
+            profile_id,
+            ConnectionState.PROFILE_REMOVED,
+            "Perfil eliminado del archivo local de perfiles.",
+            "El Docker context, el alias SSH, las claves y los recursos remotos "
+            "no fueron eliminados.",
+        )
+
     async def _connect_docker(self, profile: ConnectionProfile) -> ConnectionValidationResult:
         assert profile.docker_context is not None
         context = profile.docker_context

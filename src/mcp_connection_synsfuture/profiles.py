@@ -62,6 +62,41 @@ class ProfileRepository:
             return str(error)
         return None
 
+    def remove(self, profile_id: str) -> str | None:
+        """Remove one local profile section without touching remote resources."""
+
+        if not PROFILE_ID_PATTERN.fullmatch(profile_id) or not self._path.is_file():
+            return "profile_not_found"
+        try:
+            content = self._path.read_text(encoding="utf-8")
+            tomllib.loads(content)
+        except (OSError, tomllib.TOMLDecodeError) as error:
+            return f"The profiles file is not valid TOML: {error}"
+
+        section_pattern = re.compile(r"^\[profiles\.([a-z0-9][a-z0-9-]{0,62})\]\s*$")
+        header_pattern = re.compile(r"^\[[^\]]+\]\s*$")
+        lines = content.splitlines(keepends=True)
+        output: list[str] = []
+        removing = False
+        removed = False
+        for line in lines:
+            header = line.strip("\r\n")
+            match = section_pattern.match(header)
+            if match:
+                removing = match.group(1) == profile_id
+                removed = removed or removing
+            elif header_pattern.match(header):
+                removing = False
+            if not removing:
+                output.append(line)
+        if not removed:
+            return "profile_not_found"
+        try:
+            self._path.write_text("".join(output).rstrip() + "\n", encoding="utf-8")
+        except OSError as error:
+            return str(error)
+        return None
+
     @staticmethod
     def _profile_toml(profile: ConnectionProfile) -> str:
         capabilities = ", ".join(f'"{item}"' for item in profile.capabilities)

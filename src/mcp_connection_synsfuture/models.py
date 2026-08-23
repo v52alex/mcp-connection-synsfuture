@@ -13,6 +13,7 @@ class ProfileType(StrEnum):
 class ConnectionState(StrEnum):
     PROFILE_REQUIRED = "profile_required"
     PROFILE_REGISTERED = "profile_registered"
+    PROFILE_REMOVED = "profile_removed"
     PROFILE_EXISTS = "profile_exists"
     PROFILE_NOT_FOUND = "profile_not_found"
     PROFILE_DISABLED = "profile_disabled"

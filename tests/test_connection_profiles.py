@@ -145,3 +145,25 @@ def test_registers_profile_metadata_without_overwriting_existing_file(tmp_path: 
     assert result.profiles_file == str(path)
     assert '[profiles.vps]' in path.read_text(encoding="utf-8")
     assert duplicate.state is ConnectionState.PROFILE_EXISTS
+
+
+def test_removes_only_requested_profile_metadata(tmp_path: Path) -> None:
+    path = profile_file(
+        tmp_path,
+        """[profiles.vps]\n"""
+        """type = \"docker-context\"\n"""
+        """docker_context = \"vps\"\n\n"""
+        """[profiles.docker-remote1]\n"""
+        """type = \"docker-context\"\n"""
+        """docker_context = \"docker-remote1\"\n""",
+    )
+    service = ConnectionProfileService(StubRunner([]), ProfileRepository(path))
+
+    result = service.remove("vps")
+    content = path.read_text(encoding="utf-8")
+
+    assert result.state is ConnectionState.PROFILE_REMOVED
+    assert "profiles.vps" not in content
+    assert "profiles.docker-remote1" in content
+    assert result.recommended_action is not None
+    assert "Docker context" in result.recommended_action

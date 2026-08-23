@@ -19,7 +19,8 @@ mcp = MCPServer(
         "mentions only this MCP without naming a tool, explain that no tool was "
         "selected and show this example: "
         "mcp-connection-synsfuture.connect_connection_profile(profile_id='docker-remote1'). "
-        "Available tools are connect_connection_profile and register_connection_profile. "
+        "Available tools are connect_connection_profile, register_connection_profile, "
+        "and remove_connection_profile. "
         "profile_id. Never infer profile_id from previous messages or select a profile "
         "automatically; ask the user for the profile identifier when it is absent from "
         "the latest request. For real Codex requests, invoke the MCP tool directly and "
@@ -90,6 +91,13 @@ async def register_connection_profile(
         ssh_profile=ssh_profile,
         capabilities=capabilities or ["read"],
     )
+
+
+@mcp.tool(name="remove_connection_profile", annotations=LOCAL_PROFILE_WRITE)
+async def remove_connection_profile(profile_id: str) -> ConnectionValidationResult:
+    """Remove one local profile entry without deleting SSH or Docker resources."""
+
+    return create_service().remove(profile_id)
 
 
 def run_server() -> None:
