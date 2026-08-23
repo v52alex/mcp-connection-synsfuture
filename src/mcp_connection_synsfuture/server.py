@@ -6,7 +6,12 @@ from pathlib import Path
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from .models import ConnectionProfileListResult, ConnectionState, ConnectionValidationResult
+from .models import (
+    ConnectionProfileListResult,
+    ConnectionState,
+    ConnectionValidationResult,
+    ProfileType,
+)
 from .process import ProcessRunner
 from .profiles import ProfileRepository
 from .service import MCP_DOCUMENTATION_HINT, ConnectionProfileService, default_profile_path
@@ -79,16 +84,29 @@ async def connect_connection_profile(profile_id: str | None = None) -> Connectio
 @mcp.tool(name="register_connection_profile", annotations=LOCAL_PROFILE_WRITE)
 async def register_connection_profile(
     profile_id: str,
-    docker_context: str,
+    docker_context: str | None = None,
     ssh_profile: str | None = None,
+    profile_type: str = "docker-context",
     capabilities: list[str] | None = None,
 ) -> ConnectionValidationResult:
-    """Register safe Docker context metadata in the local authorized profile file."""
+    """Register safe Docker or generic SSH profile metadata locally."""
+
+    try:
+        selected_type = ProfileType(profile_type)
+    except ValueError:
+        return ConnectionValidationResult(
+            profile_id=profile_id,
+            state=ConnectionState.INVALID_CONFIGURATION,
+            message=f"Tipo de perfil no soportado: {profile_type}.",
+            recommended_action="Usa profile_type='docker-context' o profile_type='ssh-profile'.",
+            documentation_hint=MCP_DOCUMENTATION_HINT,
+        )
 
     return create_service().register(
         profile_id=profile_id,
         docker_context=docker_context,
         ssh_profile=ssh_profile,
+        profile_type=selected_type,
         capabilities=capabilities or ["read"],
     )
 

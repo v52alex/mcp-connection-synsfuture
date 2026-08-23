@@ -68,29 +68,24 @@ class ConnectionProfileService:
                 "Correct the local profile configuration.",
                 profile,
             )
-        if profile.type is not ProfileType.DOCKER_CONTEXT:
-            return self._result(
-                profile_id,
-                ConnectionState.UNSUPPORTED_TRANSPORT,
-                "SSH profiles are not implemented in this increment.",
-                "Use a docker-context profile while SSH profile support is being built.",
-                profile,
-            )
+        if profile.type is ProfileType.SSH_PROFILE:
+            return await self._connect_ssh(profile)
         return await self._connect_docker(profile)
 
     def register(
         self,
         profile_id: str,
-        docker_context: str,
+        docker_context: str | None,
         ssh_profile: str | None,
         capabilities: list[str],
+        profile_type: ProfileType = ProfileType.DOCKER_CONTEXT,
     ) -> ConnectionValidationResult:
         """Register safe local metadata; never stores credentials or keys."""
 
         try:
             profile = ConnectionProfile(
                 profile_id=profile_id,
-                type=ProfileType.DOCKER_CONTEXT,
+                type=profile_type,
                 docker_context=docker_context,
                 ssh_profile=ssh_profile or docker_context,
                 enabled=True,
@@ -102,7 +97,7 @@ class ConnectionProfileService:
                 profile_id,
                 ConnectionState.INVALID_CONFIGURATION,
                 f"El perfil no es válido: {message}.",
-                "Corrige el identificador y los datos del Docker context.",
+                "Corrige el identificador, tipo y datos del perfil.",
             )
         registration_error = self._profiles.register(profile)
         if registration_error == "profile_exists":
@@ -263,6 +258,68 @@ class ConnectionProfileService:
             connected=True,
         )
 
+    async def _connect_ssh(self, profile: ConnectionProfile) -> ConnectionValidationResult:
+        assert profile.ssh_profile is not None
+        agent_result = await self._validate_ssh_agent(profile)
+        if agent_result is not None:
+            return agent_result
+        try:
+            result = await self._runner.run(
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=10",
+                    "-o",
+                    "PreferredAuthentications=publickey",
+                    profile.ssh_profile,
+                    "true",
+                ],
+                self._timeout,
+            )
+        except FileNotFoundError:
+            return self._result(
+                profile.profile_id,
+                ConnectionState.UNAVAILABLE,
+                "El comando ssh no está disponible en el equipo local.",
+                "Instala OpenSSH y vuelve a validar el perfil.",
+                profile,
+                "ssh",
+            )
+        except TimeoutError:
+            return self._result(
+                profile.profile_id,
+                ConnectionState.TIMEOUT,
+                "La validación del perfil SSH agotó el tiempo de espera.",
+                "Verifica el alias SSH, el endpoint remoto y la red.",
+                profile,
+                "ssh",
+            )
+        if result.returncode != 0:
+            state = (
+                ConnectionState.AUTHENTICATION_FAILED
+                if self._is_authentication_error(result.stderr)
+                else ConnectionState.UNAVAILABLE
+            )
+            return self._result(
+                profile.profile_id,
+                state,
+                "El alias SSH no pudo establecer una conexión no interactiva.",
+                "Verifica el alias SSH, la clave autorizada y el servicio SSH remoto.",
+                profile,
+                "ssh",
+            )
+        return self._result(
+            profile.profile_id,
+            ConnectionState.READY,
+            "El perfil SSH está listo.",
+            None,
+            profile,
+            "ssh",
+            connected=True,
+        )
+
     async def _validate_ssh_agent(
         self, profile: ConnectionProfile
     ) -> ConnectionValidationResult | None:
@@ -391,18 +448,23 @@ class ConnectionProfileService:
     @staticmethod
     def _profile_example(profile: ConnectionProfile) -> str:
         capabilities = ", ".join(f'"{item}"' for item in profile.capabilities)
-        return (
-            f"[profiles.{profile.profile_id}]\n"
-            'type = "docker-context"\n'
-            f'docker_context = "{profile.docker_context}"\n'
-            f'ssh_profile = "{profile.ssh_profile}"\n'
-            "enabled = true\n"
-            f"capabilities = [{capabilities}]"
-        )
+        lines = [f"[profiles.{profile.profile_id}]", f'type = "{profile.type.value}"']
+        if profile.docker_context:
+            lines.append(f'docker_context = "{profile.docker_context}"')
+        if profile.ssh_profile:
+            lines.append(f'ssh_profile = "{profile.ssh_profile}"')
+        lines.extend(["enabled = true", f"capabilities = [{capabilities}]"])
+        return "\n".join(lines)
 
     @staticmethod
     def _setup_action(profile: ConnectionProfile) -> str:
         system = platform.system()
+        if profile.type is ProfileType.SSH_PROFILE:
+            return (
+                f"Plataforma detectada: {system or 'desconocida'}. Configura el alias SSH "
+                f"'{profile.ssh_profile}' y valida con ssh '{profile.ssh_profile}'. Después "
+                "vuelve a ejecutar connect_connection_profile. Consulta docs/PROFILE_SETUP.md."
+            )
         if system == "Windows":
             commands = (
                 'PowerShell: ssh "{alias}"',

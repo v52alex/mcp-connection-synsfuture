@@ -122,7 +122,7 @@ class ProfileRepository:
         lines = [
             f"[profiles.{profile.profile_id}]",
             f'type = "{profile.type.value}"',
-            f'docker_context = "{profile.docker_context}"',
+            *([f'docker_context = "{profile.docker_context}"'] if profile.docker_context else []),
         ]
         if profile.ssh_profile:
             lines.append(f'ssh_profile = "{profile.ssh_profile}"')

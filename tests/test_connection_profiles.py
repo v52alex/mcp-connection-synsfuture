@@ -189,3 +189,35 @@ def test_lists_sanitized_registered_profiles(tmp_path: Path) -> None:
     assert result.profiles[0].ssh_profile == "vps"
     assert result.profiles_file == "$HOME/.config/mcp-connection-synsfuture/profiles.toml"
     assert result.documentation_hint == "Más información: consulta la documentación del MCP."
+
+
+@pytest.mark.asyncio
+async def test_validates_generic_ssh_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/ssh-agent.sock")
+    runner = StubRunner(
+        [
+            CommandResult(0, "256 SHA256:example profile-key (ED25519)", ""),
+            CommandResult(0, "", ""),
+        ]
+    )
+    service = ConnectionProfileService(
+        runner,
+        ProfileRepository(
+            profile_file(
+                tmp_path,
+                """[profiles.vps]\n"""
+                """type = \"ssh-profile\"\n"""
+                """ssh_profile = \"vps\"\n"""
+                """capabilities = [\"read\"]\n""",
+            )
+        ),
+    )
+
+    result = await service.connect("vps")
+
+    assert result.state is ConnectionState.READY
+    assert result.connected is True
+    assert result.transport == "ssh"
+    assert runner.calls[1][-2:] == ["vps", "true"]
