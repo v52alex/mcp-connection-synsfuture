@@ -176,10 +176,11 @@ Codex debe responder que no se seleccionó ninguna y mostrar un ejemplo como:
 mcp-connection-synsfuture.connect_connection_profile(profile_id="docker-remote1")
 ```
 
-La herramienta disponible actualmente es:
+Las herramientas disponibles actualmente son:
 
 ```text
 connect_connection_profile(profile_id?)
+register_connection_profile(profile_id, docker_context, ssh_profile?, capabilities?)
 ```
 
 `profile_id` es el identificador del perfil de conexión preconfigurado. En un
@@ -195,6 +196,24 @@ Windows (OpenSSH Agent). Si no puede hacerlo, devuelve
 `state: ssh_agent_unavailable` con los pasos recomendados para iniciar el
 agente o cargar la clave. El MCP no devuelve claves privadas, passphrases ni el
 contenido de `authorized_keys`.
+
+Si el perfil no existe, no es necesario abrir `profiles.toml` manualmente. Usa la
+herramienta de registro proporcionando los datos del contexto:
+
+```text
+mcp-connection-synsfuture.register_connection_profile(
+  profile_id="vps",
+  docker_context="vps",
+  ssh_profile="vps",
+  capabilities=["read"]
+)
+```
+
+El MCP escribe el perfil en la ruta de configuración de la plataforma, por
+ejemplo `%USERPROFILE%/.config/mcp-connection-synsfuture/profiles.toml` en
+Windows o `$HOME/.config/mcp-connection-synsfuture/profiles.toml` en macOS y
+Linux. La herramienta no sobrescribe perfiles existentes y no almacena claves,
+passphrases, IPs ni contraseñas.
 
 En una conversación real de Codex debe invocarse la herramienta MCP directamente.
 No debe ejecutarse `client.py`, `docker` ni comandos SSH como sustituto; `client.py`
