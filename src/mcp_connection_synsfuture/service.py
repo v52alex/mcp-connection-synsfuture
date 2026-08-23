@@ -20,6 +20,8 @@ from .models import (
 from .process import CommandResult
 from .profiles import ProfileRepository, validate_profile_shape
 
+MCP_DOCUMENTATION_HINT = "Más información: consulta la documentación del MCP."
+
 
 class CommandRunner(Protocol):
     async def run(self, args: list[str], timeout_seconds: float) -> CommandResult: ...
@@ -177,6 +179,7 @@ class ConnectionProfileService:
             profiles=profiles,
             profiles_file=self.display_profiles_path,
             message=message,
+            documentation_hint=MCP_DOCUMENTATION_HINT,
         )
 
     async def _connect_docker(self, profile: ConnectionProfile) -> ConnectionValidationResult:
@@ -380,6 +383,7 @@ class ConnectionProfileService:
             capabilities=profile.capabilities if profile else (),
             message=message,
             recommended_action=action,
+            documentation_hint=MCP_DOCUMENTATION_HINT,
             profiles_file=profiles_file or self.display_profiles_path,
             profile_example=profile_example,
         )

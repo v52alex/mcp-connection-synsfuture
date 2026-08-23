@@ -80,3 +80,4 @@ class ConnectionProfileListResult(BaseModel):
     profiles: tuple[ConnectionProfileSummary, ...]
     profiles_file: str
     message: str
+    documentation_hint: str

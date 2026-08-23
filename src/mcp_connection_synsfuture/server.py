@@ -9,7 +9,7 @@ from mcp.types import ToolAnnotations
 from .models import ConnectionProfileListResult, ConnectionState, ConnectionValidationResult
 from .process import ProcessRunner
 from .profiles import ProfileRepository
-from .service import ConnectionProfileService, default_profile_path
+from .service import MCP_DOCUMENTATION_HINT, ConnectionProfileService, default_profile_path
 
 mcp = MCPServer(
     "mcp-connection-synsfuture",
@@ -70,7 +70,7 @@ async def connect_connection_profile(profile_id: str | None = None) -> Connectio
                 "registrarlo. Para más información, consulta README.md y "
                 "docs/PROFILE_SETUP.md del proyecto."
             ),
-            documentation_hint="Consulta README.md y docs/PROFILE_SETUP.md.",
+            documentation_hint=MCP_DOCUMENTATION_HINT,
             profiles_file=service.display_profiles_path,
         )
     return await service.connect(profile_id)
