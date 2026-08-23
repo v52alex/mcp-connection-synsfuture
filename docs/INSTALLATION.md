@@ -9,10 +9,10 @@
 
 ## Instalación desde Git
 
-Reemplaza `OWNER/REPO` por el repositorio oficial:
+Durante esta etapa el código se mantiene en la rama `dev`:
 
 ```bash
-uv tool install "git+https://github.com/OWNER/REPO.git"
+uv tool install "git+https://github.com/v52alex/mcp-connection-synsfuture.git@dev"
 ```
 
 ## Configuración local
