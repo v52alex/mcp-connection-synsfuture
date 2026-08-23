@@ -105,4 +105,5 @@ mcp-connection-synsfuture.list_connection_profiles()
 ```
 
 El resultado es sanitizado y no incluye claves privadas, passphrases ni
-credenciales.
+credenciales. Todas las herramientas incluyen también un campo
+`documentation_hint` que indica consultar la documentación del MCP.
