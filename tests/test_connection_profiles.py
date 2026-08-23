@@ -142,7 +142,7 @@ def test_registers_profile_metadata_without_overwriting_existing_file(tmp_path: 
     duplicate = service.register("vps", "vps", "vps", ["read"])
 
     assert result.state is ConnectionState.PROFILE_REGISTERED
-    assert result.profiles_file == str(path)
+    assert result.profiles_file == "$HOME/.config/mcp-connection-synsfuture/profiles.toml"
     assert '[profiles.vps]' in path.read_text(encoding="utf-8")
     assert duplicate.state is ConnectionState.PROFILE_EXISTS
 
@@ -186,4 +186,4 @@ def test_lists_sanitized_registered_profiles(tmp_path: Path) -> None:
     assert len(result.profiles) == 1
     assert result.profiles[0].profile_id == "vps"
     assert result.profiles[0].ssh_profile == "vps"
-    assert result.profiles_file == str(path)
+    assert result.profiles_file == "$HOME/.config/mcp-connection-synsfuture/profiles.toml"

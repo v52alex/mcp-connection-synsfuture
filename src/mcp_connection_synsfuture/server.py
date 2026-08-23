@@ -71,7 +71,7 @@ async def connect_connection_profile(profile_id: str | None = None) -> Connectio
                 "docs/PROFILE_SETUP.md del proyecto."
             ),
             documentation_hint="Consulta README.md y docs/PROFILE_SETUP.md.",
-            profiles_file=str(service.profiles_path),
+            profiles_file=service.display_profiles_path,
         )
     return await service.connect(profile_id)
 

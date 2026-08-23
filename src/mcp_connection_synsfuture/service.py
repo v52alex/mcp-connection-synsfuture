@@ -35,6 +35,10 @@ class ConnectionProfileService:
     def profiles_path(self) -> Path:
         return self._profiles.path
 
+    @property
+    def display_profiles_path(self) -> str:
+        return display_profiles_path()
+
     async def connect(self, profile_id: str) -> ConnectionValidationResult:
         profile = self._profiles.get(profile_id)
         if profile is None:
@@ -121,7 +125,7 @@ class ConnectionProfileService:
             "Perfil registrado localmente. El MCP todavía debe validar el contexto y la conexión.",
             self._setup_action(profile),
             profile,
-            profiles_file=str(self._profiles.path),
+            profiles_file=self.display_profiles_path,
             profile_example=self._profile_example(profile),
         )
 
@@ -171,7 +175,7 @@ class ConnectionProfileService:
         )
         return ConnectionProfileListResult(
             profiles=profiles,
-            profiles_file=str(self._profiles.path),
+            profiles_file=self.display_profiles_path,
             message=message,
         )
 
@@ -376,7 +380,7 @@ class ConnectionProfileService:
             capabilities=profile.capabilities if profile else (),
             message=message,
             recommended_action=action,
-            profiles_file=profiles_file or str(self._profiles.path),
+            profiles_file=profiles_file or self.display_profiles_path,
             profile_example=profile_example,
         )
 
@@ -421,3 +425,11 @@ def default_profile_path() -> Path:
     if config_root:
         return Path(config_root) / "mcp-connection-synsfuture" / "profiles.toml"
     return Path.home() / ".config" / "mcp-connection-synsfuture" / "profiles.toml"
+
+
+def display_profiles_path() -> str:
+    """Return a platform-generic path without exposing the local username."""
+
+    if os.name == "nt":
+        return r"%USERPROFILE%\.config\mcp-connection-synsfuture\profiles.toml"
+    return "$HOME/.config/mcp-connection-synsfuture/profiles.toml"
