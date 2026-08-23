@@ -142,3 +142,41 @@ class ComposeMutationResult(BaseModel):
     command_preview: list[str] = Field(default_factory=list)
     message: str
     documentation_hint: str
+
+
+class DockerProjectInspectionResult(BaseModel):
+    """Safe local Docker project inspection."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_path: str
+    dockerfile_path: str | None
+    dockerignore_path: str | None
+    build_ready: bool
+    warnings: list[str] = Field(default_factory=list)
+    documentation_hint: str
+
+
+class DockerBuildResult(BaseModel):
+    """Controlled Docker image build plan or result."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    state: str
+    executed: bool
+    image_reference: str
+    project_path: str
+    command_preview: list[str] = Field(default_factory=list)
+    message: str
+    documentation_hint: str
+
+
+class AuditEventListResult(BaseModel):
+    """Sanitized local audit event listing."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    events: list[dict[str, Any]] = Field(default_factory=list)
+    message: str
+    documentation_hint: str

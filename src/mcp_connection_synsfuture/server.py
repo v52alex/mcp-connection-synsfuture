@@ -8,15 +8,19 @@ from mcp.types import ToolAnnotations
 
 from .compose_read import ComposeReadService
 from .compose_write import ComposeWriteService
+from .docker_build import DockerBuildService
 from .docker_read import DockerReadService
 from .docker_write import DockerWriteService
 from .models import (
+    AuditEventListResult,
     ComposeMutationResult,
     ComposeReadResult,
     ConnectionProfileListResult,
     ConnectionState,
     ConnectionValidationResult,
+    DockerBuildResult,
     DockerMutationResult,
+    DockerProjectInspectionResult,
     DockerReadResult,
     ProfileType,
 )
@@ -91,6 +95,10 @@ def create_compose_read_service() -> ComposeReadService:
 
 def create_compose_write_service() -> ComposeWriteService:
     return ComposeWriteService(ProcessRunner(), create_service())
+
+
+def create_docker_build_service() -> DockerBuildService:
+    return DockerBuildService(ProcessRunner(), create_service())
 
 
 @mcp.tool(name="connect_connection_profile", annotations=READ_ONLY_EXTERNAL)
@@ -399,6 +407,45 @@ async def remove_compose_project_docker(
 
     return await create_compose_write_service().operation(
         profile_id, "down", project_path, compose_file, confirmation
+    )
+
+
+@mcp.tool(name="inspect_docker_project_docker", annotations=READ_ONLY_EXTERNAL)
+def inspect_docker_project_docker(
+    project_path: str, dockerfile: str = "Dockerfile"
+) -> DockerProjectInspectionResult:
+    """Inspect a local Docker project without remote mutation."""
+
+    return create_docker_build_service().inspect_project(project_path, dockerfile)
+
+
+@mcp.tool(name="build_image_docker", annotations=REMOTE_MUTATION)
+async def build_image_docker(
+    profile_id: str,
+    project_path: str,
+    image_name: str,
+    tag: str = "latest",
+    dockerfile: str = "Dockerfile",
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> DockerBuildResult:
+    """Plan or build an image after explicit confirmation."""
+
+    return await create_docker_build_service().build(
+        profile_id, project_path, image_name, tag, dockerfile, dry_run, confirmation
+    )
+
+
+@mcp.tool(name="list_audit_events_docker", annotations=READ_ONLY_EXTERNAL)
+def list_audit_events_docker(limit: int = 20) -> AuditEventListResult:
+    """List sanitized local audit events when an audit store is configured."""
+
+    if not 1 <= limit <= 100:
+        raise ValueError("limit must be between 1 and 100")
+    return AuditEventListResult(
+        events=[],
+        message="No hay eventos de auditoría persistidos todavía.",
+        documentation_hint=MCP_DOCUMENTATION_HINT,
     )
 
 
