@@ -82,3 +82,16 @@ capabilities = ["read"]
 El archivo se crea automáticamente en la ruta de configuración de la
 plataforma. El registro no crea el alias SSH ni el Docker context; después de
 prepararlos, ejecuta `connect_connection_profile` para validarlos.
+
+## Eliminar un perfil
+
+Para eliminar solamente el registro local:
+
+```text
+mcp-connection-synsfuture.remove_connection_profile(
+  profile_id="vps"
+)
+```
+
+El MCP no elimina el Docker context, el alias SSH, las claves ni recursos
+remotos. Si el perfil no existe, devuelve `profile_not_found`.

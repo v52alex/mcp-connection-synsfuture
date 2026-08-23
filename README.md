@@ -181,6 +181,7 @@ Las herramientas disponibles actualmente son:
 ```text
 connect_connection_profile(profile_id?)
 register_connection_profile(profile_id, docker_context, ssh_profile?, capabilities?)
+remove_connection_profile(profile_id)
 ```
 
 `profile_id` es el identificador del perfil de conexión preconfigurado. En un
@@ -214,6 +215,17 @@ ejemplo `%USERPROFILE%/.config/mcp-connection-synsfuture/profiles.toml` en
 Windows o `$HOME/.config/mcp-connection-synsfuture/profiles.toml` en macOS y
 Linux. La herramienta no sobrescribe perfiles existentes y no almacena claves,
 passphrases, IPs ni contraseñas.
+
+Para eliminar únicamente el registro local de un perfil:
+
+```text
+mcp-connection-synsfuture.remove_connection_profile(
+  profile_id="vps"
+)
+```
+
+Esta operación no elimina el Docker context, el alias SSH, las claves ni ningún
+recurso remoto.
 
 En una conversación real de Codex debe invocarse la herramienta MCP directamente.
 No debe ejecutarse `client.py`, `docker` ni comandos SSH como sustituto; `client.py`
