@@ -291,7 +291,7 @@ docker --context docker-remote1 ps -a
 Desde la raíz del proyecto:
 
 ```bash
-cd /Users/washingtonchavezpluas/Documents/Codex/Project/mcp-connection-synsfuture
+cd <PROJECT_DIR>/mcp-connection-synsfuture
 cp profiles.example.toml profiles.toml
 ```
 
@@ -351,7 +351,7 @@ echo "$SSH_AUTH_SOCK"
 codex mcp add mcp-connection-synsfuture \
   --env MCP_CONNECTION_PROFILES_FILE=/ruta/absoluta/Project/mcp-connection-synsfuture/profiles.toml \
   --env SSH_AUTH_SOCK=/ruta/obtenida/de/SSH_AUTH_SOCK \
-  -- /Users/washingtonchavezpluas/Documents/Codex/Project/mcp-connection-synsfuture/.venv/bin/mcp-connection-synsfuture
+  -- <PROJECT_DIR>/mcp-connection-synsfuture/.venv/bin/mcp-connection-synsfuture
 ```
 
 En macOS, el valor suele parecerse a:
