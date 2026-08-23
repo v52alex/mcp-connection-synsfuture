@@ -6,10 +6,12 @@ from pathlib import Path
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
+from .docker_read import DockerReadService
 from .models import (
     ConnectionProfileListResult,
     ConnectionState,
     ConnectionValidationResult,
+    DockerReadResult,
     ProfileType,
 )
 from .process import ProcessRunner
@@ -53,6 +55,10 @@ def create_service() -> ConnectionProfileService:
     configured_path = os.getenv("MCP_CONNECTION_PROFILES_FILE")
     path = Path(configured_path).expanduser() if configured_path else default_profile_path()
     return ConnectionProfileService(ProcessRunner(), ProfileRepository(path))
+
+
+def create_docker_read_service() -> DockerReadService:
+    return DockerReadService(ProcessRunner(), create_service())
 
 
 @mcp.tool(name="connect_connection_profile", annotations=READ_ONLY_EXTERNAL)
@@ -123,6 +129,43 @@ async def list_connection_profiles() -> ConnectionProfileListResult:
     """List sanitized metadata for locally authorized connection profiles."""
 
     return create_service().list_profiles()
+
+
+@mcp.tool(name="list_images_docker", annotations=READ_ONLY_EXTERNAL)
+async def list_images_docker(profile_id: str) -> DockerReadResult:
+    """List sanitized images through an authorized Docker context."""
+
+    return await create_docker_read_service().list_images(profile_id)
+
+
+@mcp.tool(name="inspect_image_docker", annotations=READ_ONLY_EXTERNAL)
+async def inspect_image_docker(profile_id: str, image_reference: str) -> DockerReadResult:
+    """Inspect an image without returning environment variables or history."""
+
+    return await create_docker_read_service().inspect_image(profile_id, image_reference)
+
+
+@mcp.tool(name="list_containers_docker", annotations=READ_ONLY_EXTERNAL)
+async def list_containers_docker(profile_id: str) -> DockerReadResult:
+    """List sanitized containers through an authorized Docker context."""
+
+    return await create_docker_read_service().list_containers(profile_id)
+
+
+@mcp.tool(name="inspect_container_docker", annotations=READ_ONLY_EXTERNAL)
+async def inspect_container_docker(profile_id: str, container_name: str) -> DockerReadResult:
+    """Inspect safe container state without environment variables or mounts."""
+
+    return await create_docker_read_service().inspect_container(profile_id, container_name)
+
+
+@mcp.tool(name="container_logs_docker", annotations=READ_ONLY_EXTERNAL)
+async def container_logs_docker(
+    profile_id: str, container_name: str, tail: int = 100
+) -> DockerReadResult:
+    """Return bounded, redacted logs as untrusted data."""
+
+    return await create_docker_read_service().logs(profile_id, container_name, tail)
 
 
 def run_server() -> None:

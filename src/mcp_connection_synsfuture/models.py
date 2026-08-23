@@ -1,6 +1,7 @@
 """Contracts for connection profiles and validation results."""
 
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -79,5 +80,19 @@ class ConnectionProfileListResult(BaseModel):
 
     profiles: tuple[ConnectionProfileSummary, ...]
     profiles_file: str
+    message: str
+    documentation_hint: str
+
+
+class DockerReadResult(BaseModel):
+    """Sanitized read-only Docker operation result."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    operation: str
+    profile_id: str
+    connected: bool
+    records: list[dict[str, Any]] = Field(default_factory=list)
+    lines: list[str] = Field(default_factory=list)
     message: str
     documentation_hint: str
