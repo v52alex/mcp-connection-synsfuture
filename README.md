@@ -229,10 +229,10 @@ caso, iniciar una sesión nueva antes de probar el MCP.
 ## Instalación desde un repositorio
 
 El proyecto está empaquetado como una aplicación Python y expone el comando
-`mcp-connection-synsfuture`. Reemplaza `OWNER/REPO` por la ubicación oficial:
+`mcp-connection-synsfuture`. Durante esta etapa el código se mantiene en `dev`:
 
 ```bash
-uv tool install "git+https://github.com/OWNER/REPO.git"
+uv tool install "git+https://github.com/v52alex/mcp-connection-synsfuture.git@dev"
 ```
 
 La instalación no incluye perfiles reales ni secretos. Crea la configuración
