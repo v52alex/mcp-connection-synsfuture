@@ -183,6 +183,11 @@ connect_connection_profile(profile_id?)
 register_connection_profile(profile_id, docker_context?, ssh_profile?, profile_type?, capabilities?)
 remove_connection_profile(profile_id)
 list_connection_profiles()
+list_images_docker(profile_id)
+inspect_image_docker(profile_id, image_reference)
+list_containers_docker(profile_id)
+inspect_container_docker(profile_id, container_name)
+container_logs_docker(profile_id, container_name, tail?)
 ```
 
 `profile_id` es el identificador del perfil de conexión preconfigurado. En un

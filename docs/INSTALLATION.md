@@ -121,3 +121,15 @@ mcp-connection-synsfuture.list_connection_profiles()
 El resultado es sanitizado y no incluye claves privadas, passphrases ni
 credenciales. Todas las herramientas incluyen también un campo
 `documentation_hint` que indica consultar la documentación del MCP.
+
+Las herramientas Docker de solo lectura requieren siempre el perfil explícito:
+
+```text
+mcp-connection-synsfuture.list_images_docker(profile_id="docker-remote1")
+mcp-connection-synsfuture.list_containers_docker(profile_id="docker-remote1")
+mcp-connection-synsfuture.container_logs_docker(
+  profile_id="docker-remote1",
+  container_name="mi-contenedor",
+  tail=100
+)
+```
