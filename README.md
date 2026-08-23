@@ -82,7 +82,7 @@ fase inicial; cualquier endpoint web futuro deberá registrarse explícitamente.
 | P0 | Recibir y validar un perfil solicitado por el usuario | discovery |
 | P0 | Inspeccionar y sanitizar metadata del perfil | discovery |
 | P0 | Configurar allowlist de perfiles autorizados | discovery |
-| P1 | Validar perfiles SSH separados de Docker | pending |
+| P1 | Validar perfiles SSH separados de Docker | completed |
 | P1 | Exponer herramientas MCP de solo lectura | pending |
 | P2 | Migrar operaciones Docker controladas | pending |
 
@@ -180,7 +180,7 @@ Las herramientas disponibles actualmente son:
 
 ```text
 connect_connection_profile(profile_id?)
-register_connection_profile(profile_id, docker_context, ssh_profile?, capabilities?)
+register_connection_profile(profile_id, docker_context?, ssh_profile?, profile_type?, capabilities?)
 remove_connection_profile(profile_id)
 list_connection_profiles()
 ```
@@ -216,6 +216,20 @@ ejemplo `%USERPROFILE%/.config/mcp-connection-synsfuture/profiles.toml` en
 Windows o `$HOME/.config/mcp-connection-synsfuture/profiles.toml` en macOS y
 Linux. La herramienta no sobrescribe perfiles existentes y no almacena claves,
 passphrases, IPs ni contraseñas.
+
+Para un VPS que no expone Docker, registra un perfil SSH genérico:
+
+```text
+mcp-connection-synsfuture.register_connection_profile(
+  profile_id="vps",
+  profile_type="ssh-profile",
+  ssh_profile="vps",
+  capabilities=["read"]
+)
+```
+
+El alias `vps` debe existir previamente en la configuración SSH del equipo. La
+validación usará `ssh` en modo no interactivo y no solicitará contraseña.
 
 Para eliminar únicamente el registro local de un perfil:
 
@@ -336,5 +350,5 @@ autorizado, la conexión termina sin intentar otro destino.
 
 ## Próximo incremento
 
-Ampliar la cobertura de estados y agregar perfiles SSH para VPS sin mezclar su
-contrato con los perfiles Docker.
+Ampliar la cobertura de estados y agregar operaciones controladas para perfiles
+SSH y Docker.
