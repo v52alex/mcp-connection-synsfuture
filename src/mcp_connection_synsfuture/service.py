@@ -2,6 +2,7 @@
 
 import json
 import os
+import platform
 import sys
 from pathlib import Path
 from typing import Any, Protocol
@@ -336,10 +337,25 @@ class ConnectionProfileService:
 
     @staticmethod
     def _setup_action(profile: ConnectionProfile) -> str:
+        system = platform.system()
+        if system == "Windows":
+            commands = (
+                'PowerShell: ssh "{alias}"',
+                'PowerShell: docker context create "{context}" --docker "host=ssh://{alias}"',
+            )
+        else:
+            commands = (
+                'ssh "{alias}"',
+                'docker context create "{context}" --docker "host=ssh://{alias}"',
+            )
+        command_text = " && ".join(
+            command.format(alias=profile.ssh_profile, context=profile.docker_context)
+            for command in commands
+        )
         return (
-            f"Configura el alias SSH '{profile.ssh_profile}' y crea el Docker context "
-            f"'{profile.docker_context}' con host=ssh://{profile.ssh_profile}; después "
-            "vuelve a ejecutar connect_connection_profile. Consulta docs/PROFILE_SETUP.md."
+            f"Plataforma detectada: {system or 'desconocida'}. Configura el alias SSH "
+            f"'{profile.ssh_profile}' y ejecuta: {command_text}. Después vuelve a "
+            "ejecutar connect_connection_profile. Consulta docs/PROFILE_SETUP.md."
         )
 
 
