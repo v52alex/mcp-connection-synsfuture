@@ -204,6 +204,9 @@ audit_compose_project_docker(profile_id, project_path, compose_file?)
 plan_compose_deployment_docker(profile_id, project_path, compose_file?)
 deploy_compose_project_docker(profile_id, project_path, compose_file?, dry_run?, confirmation?)
 remove_compose_project_docker(profile_id, project_path, compose_file?, confirmation?)
+inspect_docker_project_docker(project_path, dockerfile?)
+build_image_docker(profile_id, project_path, image_name, ...)
+list_audit_events_docker(limit?)
 ```
 
 `profile_id` es el identificador del perfil de conexión preconfigurado. En un
