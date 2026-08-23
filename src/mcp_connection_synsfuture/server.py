@@ -127,6 +127,27 @@ async def connect_connection_profile(profile_id: str | None = None) -> Connectio
     return await service.connect(profile_id)
 
 
+@mcp.tool(name="check_connection_docker", annotations=READ_ONLY_EXTERNAL)
+async def check_connection_docker(profile_id: str) -> ConnectionValidationResult:
+    """Compatibility alias for profile-scoped Docker connection validation."""
+
+    return await create_service().connect(profile_id)
+
+
+@mcp.tool(name="enable_connection_docker", annotations=READ_ONLY_EXTERNAL)
+async def enable_connection_docker(profile_id: str) -> ConnectionValidationResult:
+    """Compatibility alias; connection preparation is handled by the profile flow."""
+
+    return await create_service().connect(profile_id)
+
+
+@mcp.tool(name="connect_vps_codex", annotations=READ_ONLY_EXTERNAL)
+async def connect_vps_codex(profile_id: str) -> ConnectionValidationResult:
+    """Compatibility alias for a profile-scoped generic SSH/VPS connection."""
+
+    return await create_service().connect(profile_id)
+
+
 @mcp.tool(name="register_connection_profile", annotations=LOCAL_PROFILE_WRITE)
 async def register_connection_profile(
     profile_id: str,
