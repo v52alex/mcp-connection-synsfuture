@@ -57,3 +57,26 @@ class ConnectionValidationResult(BaseModel):
     documentation_hint: str | None = None
     profiles_file: str | None = None
     profile_example: str | None = None
+
+
+class ConnectionProfileSummary(BaseModel):
+    """Sanitized profile metadata safe to expose through the MCP."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    profile_type: ProfileType
+    docker_context: str | None = None
+    ssh_profile: str | None = None
+    enabled: bool
+    capabilities: tuple[str, ...] = ()
+
+
+class ConnectionProfileListResult(BaseModel):
+    """Result of listing locally authorized profiles."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profiles: tuple[ConnectionProfileSummary, ...]
+    profiles_file: str
+    message: str

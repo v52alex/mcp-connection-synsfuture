@@ -6,7 +6,7 @@ from pathlib import Path
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from .models import ConnectionState, ConnectionValidationResult
+from .models import ConnectionProfileListResult, ConnectionState, ConnectionValidationResult
 from .process import ProcessRunner
 from .profiles import ProfileRepository
 from .service import ConnectionProfileService, default_profile_path
@@ -20,7 +20,7 @@ mcp = MCPServer(
         "selected and show this example: "
         "mcp-connection-synsfuture.connect_connection_profile(profile_id='docker-remote1'). "
         "Available tools are connect_connection_profile, register_connection_profile, "
-        "and remove_connection_profile. "
+        "remove_connection_profile, and list_connection_profiles. "
         "profile_id. Never infer profile_id from previous messages or select a profile "
         "automatically; ask the user for the profile identifier when it is absent from "
         "the latest request. For real Codex requests, invoke the MCP tool directly and "
@@ -98,6 +98,13 @@ async def remove_connection_profile(profile_id: str) -> ConnectionValidationResu
     """Remove one local profile entry without deleting SSH or Docker resources."""
 
     return create_service().remove(profile_id)
+
+
+@mcp.tool(name="list_connection_profiles", annotations=READ_ONLY_EXTERNAL)
+async def list_connection_profiles() -> ConnectionProfileListResult:
+    """List sanitized metadata for locally authorized connection profiles."""
+
+    return create_service().list_profiles()
 
 
 def run_server() -> None:

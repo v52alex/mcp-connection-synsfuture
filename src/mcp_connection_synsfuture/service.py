@@ -9,7 +9,14 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
-from .models import ConnectionProfile, ConnectionState, ConnectionValidationResult, ProfileType
+from .models import (
+    ConnectionProfile,
+    ConnectionProfileListResult,
+    ConnectionProfileSummary,
+    ConnectionState,
+    ConnectionValidationResult,
+    ProfileType,
+)
 from .process import CommandResult
 from .profiles import ProfileRepository, validate_profile_shape
 
@@ -143,6 +150,29 @@ class ConnectionProfileService:
             "Perfil eliminado del archivo local de perfiles.",
             "El Docker context, el alias SSH, las claves y los recursos remotos "
             "no fueron eliminados.",
+        )
+
+    def list_profiles(self) -> ConnectionProfileListResult:
+        profiles = tuple(
+            ConnectionProfileSummary(
+                profile_id=profile.profile_id,
+                profile_type=profile.type,
+                docker_context=profile.docker_context,
+                ssh_profile=profile.ssh_profile,
+                enabled=profile.enabled,
+                capabilities=profile.capabilities,
+            )
+            for profile in self._profiles.list_profiles()
+        )
+        message = (
+            "No hay perfiles registrados en el archivo local."
+            if not profiles
+            else f"Se encontraron {len(profiles)} perfiles registrados."
+        )
+        return ConnectionProfileListResult(
+            profiles=profiles,
+            profiles_file=str(self._profiles.path),
+            message=message,
         )
 
     async def _connect_docker(self, profile: ConnectionProfile) -> ConnectionValidationResult:

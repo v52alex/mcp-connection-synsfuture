@@ -167,3 +167,23 @@ def test_removes_only_requested_profile_metadata(tmp_path: Path) -> None:
     assert "profiles.docker-remote1" in content
     assert result.recommended_action is not None
     assert "Docker context" in result.recommended_action
+
+
+def test_lists_sanitized_registered_profiles(tmp_path: Path) -> None:
+    path = profile_file(
+        tmp_path,
+        """[profiles.vps]\n"""
+        """type = \"docker-context\"\n"""
+        """docker_context = \"vps\"\n"""
+        """ssh_profile = \"vps\"\n"""
+        """enabled = true\n"""
+        """capabilities = [\"read\"]\n""",
+    )
+    service = ConnectionProfileService(StubRunner([]), ProfileRepository(path))
+
+    result = service.list_profiles()
+
+    assert len(result.profiles) == 1
+    assert result.profiles[0].profile_id == "vps"
+    assert result.profiles[0].ssh_profile == "vps"
+    assert result.profiles_file == str(path)

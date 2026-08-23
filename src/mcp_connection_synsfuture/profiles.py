@@ -39,6 +39,25 @@ class ProfileRepository:
         except ValidationError:
             return None
 
+    def list_profiles(self) -> tuple[ConnectionProfile, ...]:
+        if not self._path.is_file():
+            return ()
+        try:
+            raw = tomllib.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            return ()
+        profiles = raw.get("profiles")
+        if not isinstance(profiles, dict):
+            return ()
+        result: list[ConnectionProfile] = []
+        for profile_id, entry in profiles.items():
+            if isinstance(profile_id, str) and isinstance(entry, dict):
+                try:
+                    result.append(ConnectionProfile(profile_id=profile_id, **entry))
+                except ValidationError:
+                    continue
+        return tuple(result)
+
     def register(self, profile: ConnectionProfile) -> str | None:
         """Append a new profile without overwriting existing configuration."""
 
