@@ -95,3 +95,14 @@ mcp-connection-synsfuture.remove_connection_profile(
 
 El MCP no elimina el Docker context, el alias SSH, las claves ni recursos
 remotos. Si el perfil no existe, devuelve `profile_not_found`.
+
+## Listar perfiles
+
+Para consultar los perfiles registrados en el archivo local:
+
+```text
+mcp-connection-synsfuture.list_connection_profiles()
+```
+
+El resultado es sanitizado y no incluye claves privadas, passphrases ni
+credenciales.

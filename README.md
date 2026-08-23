@@ -182,6 +182,7 @@ Las herramientas disponibles actualmente son:
 connect_connection_profile(profile_id?)
 register_connection_profile(profile_id, docker_context, ssh_profile?, capabilities?)
 remove_connection_profile(profile_id)
+list_connection_profiles()
 ```
 
 `profile_id` es el identificador del perfil de conexión preconfigurado. En un
@@ -226,6 +227,15 @@ mcp-connection-synsfuture.remove_connection_profile(
 
 Esta operación no elimina el Docker context, el alias SSH, las claves ni ningún
 recurso remoto.
+
+Para consultar los perfiles registrados:
+
+```text
+mcp-connection-synsfuture.list_connection_profiles()
+```
+
+La respuesta incluye solo metadata autorizada y sanitizada: `profile_id`, tipo,
+Docker context, alias SSH, capacidades y estado habilitado.
 
 En una conversación real de Codex debe invocarse la herramienta MCP directamente.
 No debe ejecutarse `client.py`, `docker` ni comandos SSH como sustituto; `client.py`
