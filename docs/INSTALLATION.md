@@ -166,3 +166,18 @@ mcp-connection-synsfuture.compose_ps_docker(
 ```
 
 Los resultados no incluyen valores de entorno ni credenciales del proyecto.
+
+Las operaciones Compose mutables requieren confirmación explícita:
+
+```text
+mcp-connection-synsfuture.compose_up_docker(
+  profile_id="docker-remote1",
+  project_path="/ruta/al/proyecto"
+)
+```
+
+Usa `CONFIRM_COMPOSE_UP`, `CONFIRM_COMPOSE_STOP`,
+`CONFIRM_COMPOSE_RESTART`, `CONFIRM_COMPOSE_DOWN`,
+`CONFIRM_COMPOSE_DEPLOY` o `CONFIRM_COMPOSE_REMOVE`, según la operación.
+`plan_compose_deployment_docker` y `audit_compose_project_docker` no mutan el
+entorno.

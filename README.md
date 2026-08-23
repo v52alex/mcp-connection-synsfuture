@@ -196,6 +196,14 @@ remove_container_docker(profile_id, container_name, confirmation?)
 inspect_compose_project_docker(profile_id, project_path, compose_file?)
 compose_ps_docker(profile_id, project_path, compose_file?)
 compose_logs_docker(profile_id, project_path, compose_file?, tail?)
+compose_up_docker(profile_id, project_path, compose_file?, dry_run?, confirmation?)
+compose_stop_docker(profile_id, project_path, compose_file?, confirmation?)
+compose_restart_docker(profile_id, project_path, compose_file?, confirmation?)
+compose_down_docker(profile_id, project_path, compose_file?, confirmation?)
+audit_compose_project_docker(profile_id, project_path, compose_file?)
+plan_compose_deployment_docker(profile_id, project_path, compose_file?)
+deploy_compose_project_docker(profile_id, project_path, compose_file?, dry_run?, confirmation?)
+remove_compose_project_docker(profile_id, project_path, compose_file?, confirmation?)
 ```
 
 `profile_id` es el identificador del perfil de conexión preconfigurado. En un
