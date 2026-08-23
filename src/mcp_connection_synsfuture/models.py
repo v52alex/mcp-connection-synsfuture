@@ -96,3 +96,18 @@ class DockerReadResult(BaseModel):
     lines: list[str] = Field(default_factory=list)
     message: str
     documentation_hint: str
+
+
+class DockerMutationResult(BaseModel):
+    """Controlled Docker mutation result with an explicit execution signal."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    operation: str
+    profile_id: str
+    state: str
+    executed: bool
+    target: str
+    command_preview: list[str] = Field(default_factory=list)
+    message: str
+    documentation_hint: str

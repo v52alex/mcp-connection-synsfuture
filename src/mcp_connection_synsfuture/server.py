@@ -7,10 +7,12 @@ from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
 from .docker_read import DockerReadService
+from .docker_write import DockerWriteService
 from .models import (
     ConnectionProfileListResult,
     ConnectionState,
     ConnectionValidationResult,
+    DockerMutationResult,
     DockerReadResult,
     ProfileType,
 )
@@ -50,6 +52,20 @@ LOCAL_PROFILE_WRITE = ToolAnnotations(
     open_world_hint=False,
 )
 
+REMOTE_MUTATION = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=False,
+    open_world_hint=True,
+)
+
+REMOTE_DESTRUCTIVE = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=True,
+    idempotent_hint=True,
+    open_world_hint=True,
+)
+
 
 def create_service() -> ConnectionProfileService:
     configured_path = os.getenv("MCP_CONNECTION_PROFILES_FILE")
@@ -59,6 +75,10 @@ def create_service() -> ConnectionProfileService:
 
 def create_docker_read_service() -> DockerReadService:
     return DockerReadService(ProcessRunner(), create_service())
+
+
+def create_docker_write_service() -> DockerWriteService:
+    return DockerWriteService(ProcessRunner(), create_service())
 
 
 @mcp.tool(name="connect_connection_profile", annotations=READ_ONLY_EXTERNAL)
@@ -166,6 +186,66 @@ async def container_logs_docker(
     """Return bounded, redacted logs as untrusted data."""
 
     return await create_docker_read_service().logs(profile_id, container_name, tail)
+
+
+@mcp.tool(name="create_container_docker", annotations=REMOTE_MUTATION)
+async def create_container_docker(
+    profile_id: str,
+    image_reference: str,
+    container_name: str,
+    environment: dict[str, str] | None = None,
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> DockerMutationResult:
+    """Plan or create a managed container after explicit confirmation."""
+
+    return await create_docker_write_service().create(
+        profile_id, image_reference, container_name, environment, dry_run, confirmation
+    )
+
+
+@mcp.tool(name="start_container_docker", annotations=REMOTE_MUTATION)
+async def start_container_docker(
+    profile_id: str, container_name: str, confirmation: str | None = None
+) -> DockerMutationResult:
+    """Start only an MCP-managed container after explicit confirmation."""
+
+    return await create_docker_write_service().lifecycle(
+        profile_id, "start", container_name, confirmation
+    )
+
+
+@mcp.tool(name="stop_container_docker", annotations=REMOTE_MUTATION)
+async def stop_container_docker(
+    profile_id: str, container_name: str, confirmation: str | None = None
+) -> DockerMutationResult:
+    """Stop only an MCP-managed container after explicit confirmation."""
+
+    return await create_docker_write_service().lifecycle(
+        profile_id, "stop", container_name, confirmation
+    )
+
+
+@mcp.tool(name="restart_container_docker", annotations=REMOTE_MUTATION)
+async def restart_container_docker(
+    profile_id: str, container_name: str, confirmation: str | None = None
+) -> DockerMutationResult:
+    """Restart only an MCP-managed container after explicit confirmation."""
+
+    return await create_docker_write_service().lifecycle(
+        profile_id, "restart", container_name, confirmation
+    )
+
+
+@mcp.tool(name="remove_container_docker", annotations=REMOTE_DESTRUCTIVE)
+async def remove_container_docker(
+    profile_id: str, container_name: str, confirmation: str | None = None
+) -> DockerMutationResult:
+    """Remove only an MCP-managed container after explicit confirmation."""
+
+    return await create_docker_write_service().lifecycle(
+        profile_id, "rm", container_name, confirmation
+    )
 
 
 def run_server() -> None:

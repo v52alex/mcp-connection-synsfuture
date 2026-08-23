@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_connection_synsfuture.docker_write import DockerWriteService
 from mcp_connection_synsfuture.models import ConnectionState
 from mcp_connection_synsfuture.process import CommandResult
 from mcp_connection_synsfuture.profiles import ProfileRepository
@@ -189,6 +190,19 @@ def test_lists_sanitized_registered_profiles(tmp_path: Path) -> None:
     assert result.profiles[0].ssh_profile == "vps"
     assert result.profiles_file == "$HOME/.config/mcp-connection-synsfuture/profiles.toml"
     assert result.documentation_hint == "Más información: consulta la documentación del MCP."
+
+
+@pytest.mark.asyncio
+async def test_container_creation_is_planned_by_default(tmp_path: Path) -> None:
+    path = profile_file(tmp_path, "")
+    service = ConnectionProfileService(StubRunner([]), ProfileRepository(path))
+    docker = DockerWriteService(StubRunner([]), service)
+
+    result = await docker.create("docker-remote1", "nginx:latest", "web", None, True, None)
+
+    assert result.state == "planned"
+    assert result.executed is False
+    assert result.command_preview[-1] == "nginx:latest"
 
 
 @pytest.mark.asyncio

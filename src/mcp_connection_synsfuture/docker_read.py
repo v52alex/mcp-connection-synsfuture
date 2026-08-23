@@ -5,8 +5,7 @@ import re
 from typing import Any
 
 from .models import ConnectionState, DockerReadResult
-from .process import ProcessRunner
-from .service import MCP_DOCUMENTATION_HINT, ConnectionProfileService
+from .service import MCP_DOCUMENTATION_HINT, CommandRunner, ConnectionProfileService
 
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 IMAGE_PATTERN = re.compile(
@@ -16,7 +15,7 @@ IMAGE_PATTERN = re.compile(
 
 
 class DockerReadService:
-    def __init__(self, runner: ProcessRunner, connections: ConnectionProfileService):
+    def __init__(self, runner: CommandRunner, connections: ConnectionProfileService):
         self._runner = runner
         self._connections = connections
         self._timeout = 30.0
