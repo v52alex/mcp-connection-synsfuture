@@ -127,3 +127,18 @@ class ComposeReadResult(BaseModel):
     lines: list[str] = Field(default_factory=list)
     message: str
     documentation_hint: str
+
+
+class ComposeMutationResult(BaseModel):
+    """Controlled Docker Compose mutation or deployment plan."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    operation: str
+    profile_id: str
+    project_path: str
+    state: str
+    executed: bool
+    command_preview: list[str] = Field(default_factory=list)
+    message: str
+    documentation_hint: str

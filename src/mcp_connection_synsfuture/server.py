@@ -7,9 +7,11 @@ from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
 from .compose_read import ComposeReadService
+from .compose_write import ComposeWriteService
 from .docker_read import DockerReadService
 from .docker_write import DockerWriteService
 from .models import (
+    ComposeMutationResult,
     ComposeReadResult,
     ConnectionProfileListResult,
     ConnectionState,
@@ -85,6 +87,10 @@ def create_docker_write_service() -> DockerWriteService:
 
 def create_compose_read_service() -> ComposeReadService:
     return ComposeReadService(ProcessRunner(), create_service())
+
+
+def create_compose_write_service() -> ComposeWriteService:
+    return ComposeWriteService(ProcessRunner(), create_service())
 
 
 @mcp.tool(name="connect_connection_profile", annotations=READ_ONLY_EXTERNAL)
@@ -280,6 +286,119 @@ async def compose_logs_docker(
 
     return await create_compose_read_service().logs(
         profile_id, project_path, compose_file, tail
+    )
+
+
+@mcp.tool(name="compose_up_docker", annotations=REMOTE_MUTATION)
+async def compose_up_docker(
+    profile_id: str,
+    project_path: str,
+    compose_file: str | None = None,
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> ComposeMutationResult:
+    """Plan or start a Compose project after explicit confirmation."""
+
+    return await create_compose_write_service().operation(
+        profile_id, "up", project_path, compose_file, confirmation, dry_run
+    )
+
+
+@mcp.tool(name="compose_stop_docker", annotations=REMOTE_MUTATION)
+async def compose_stop_docker(
+    profile_id: str,
+    project_path: str,
+    compose_file: str | None = None,
+    confirmation: str | None = None,
+) -> ComposeMutationResult:
+    """Stop a Compose project after explicit confirmation."""
+
+    return await create_compose_write_service().operation(
+        profile_id, "stop", project_path, compose_file, confirmation
+    )
+
+
+@mcp.tool(name="compose_restart_docker", annotations=REMOTE_MUTATION)
+async def compose_restart_docker(
+    profile_id: str,
+    project_path: str,
+    compose_file: str | None = None,
+    confirmation: str | None = None,
+) -> ComposeMutationResult:
+    """Restart a Compose project after explicit confirmation."""
+
+    return await create_compose_write_service().operation(
+        profile_id, "restart", project_path, compose_file, confirmation
+    )
+
+
+@mcp.tool(name="compose_down_docker", annotations=REMOTE_DESTRUCTIVE)
+async def compose_down_docker(
+    profile_id: str,
+    project_path: str,
+    compose_file: str | None = None,
+    confirmation: str | None = None,
+) -> ComposeMutationResult:
+    """Remove Compose containers and networks while preserving volumes."""
+
+    return await create_compose_write_service().operation(
+        profile_id, "down", project_path, compose_file, confirmation
+    )
+
+
+@mcp.tool(name="audit_compose_project_docker", annotations=READ_ONLY_EXTERNAL)
+async def audit_compose_project_docker(
+    profile_id: str, project_path: str, compose_file: str | None = None
+) -> ComposeMutationResult:
+    """Validate Compose configuration without mutation."""
+
+    return await create_compose_write_service().audit(profile_id, project_path, compose_file)
+
+
+@mcp.tool(name="plan_compose_deployment_docker", annotations=READ_ONLY_EXTERNAL)
+async def plan_compose_deployment_docker(
+    profile_id: str, project_path: str, compose_file: str | None = None
+) -> ComposeMutationResult:
+    """Return a non-mutating Compose deployment plan."""
+
+    return await create_compose_write_service().operation(
+        profile_id,
+        "up",
+        project_path,
+        compose_file,
+        confirmation=None,
+        dry_run=True,
+    )
+
+
+@mcp.tool(name="deploy_compose_project_docker", annotations=REMOTE_MUTATION)
+async def deploy_compose_project_docker(
+    profile_id: str,
+    project_path: str,
+    compose_file: str | None = None,
+    dry_run: bool = True,
+    confirmation: str | None = None,
+    health_wait_seconds: int | None = None,
+) -> ComposeMutationResult:
+    """Plan or deploy Compose after explicit confirmation."""
+
+    del health_wait_seconds
+    return await create_compose_write_service().operation(
+        profile_id, "up", project_path, compose_file, confirmation, dry_run
+    )
+
+
+@mcp.tool(name="remove_compose_project_docker", annotations=REMOTE_DESTRUCTIVE)
+async def remove_compose_project_docker(
+    profile_id: str,
+    project_path: str,
+    compose_file: str | None = None,
+    confirmation: str | None = None,
+) -> ComposeMutationResult:
+    """Remove a Compose project after explicit confirmation."""
+
+    return await create_compose_write_service().operation(
+        profile_id, "down", project_path, compose_file, confirmation
     )
 
 
