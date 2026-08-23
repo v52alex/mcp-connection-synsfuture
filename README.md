@@ -237,6 +237,9 @@ mcp-connection-synsfuture.list_connection_profiles()
 La respuesta incluye solo metadata autorizada y sanitizada: `profile_id`, tipo,
 Docker context, alias SSH, capacidades y estado habilitado.
 
+Todas las herramientas devuelven también `documentation_hint` con el mensaje
+`Más información: consulta la documentación del MCP.`
+
 En una conversación real de Codex debe invocarse la herramienta MCP directamente.
 No debe ejecutarse `client.py`, `docker` ni comandos SSH como sustituto; `client.py`
 es únicamente el cliente de desarrollo local.
