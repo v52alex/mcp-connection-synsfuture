@@ -83,6 +83,20 @@ El archivo se crea automáticamente en la ruta de configuración de la
 plataforma. El registro no crea el alias SSH ni el Docker context; después de
 prepararlos, ejecuta `connect_connection_profile` para validarlos.
 
+Para una conexión VPS sin Docker, registra un perfil SSH:
+
+```text
+mcp-connection-synsfuture.register_connection_profile(
+  profile_id="vps",
+  profile_type="ssh-profile",
+  ssh_profile="vps",
+  capabilities=["read"]
+)
+```
+
+El alias `vps` debe estar configurado previamente en SSH. El MCP validará el
+alias mediante una sesión no interactiva con autenticación por clave.
+
 ## Eliminar un perfil
 
 Para eliminar solamente el registro local:
