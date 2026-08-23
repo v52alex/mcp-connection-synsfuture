@@ -111,3 +111,19 @@ class DockerMutationResult(BaseModel):
     command_preview: list[str] = Field(default_factory=list)
     message: str
     documentation_hint: str
+
+
+class ComposeReadResult(BaseModel):
+    """Sanitized read-only Docker Compose result."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    operation: str
+    profile_id: str
+    project_path: str
+    connected: bool
+    services: list[str] = Field(default_factory=list)
+    records: list[dict[str, Any]] = Field(default_factory=list)
+    lines: list[str] = Field(default_factory=list)
+    message: str
+    documentation_hint: str

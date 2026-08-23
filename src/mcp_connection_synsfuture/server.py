@@ -6,9 +6,11 @@ from pathlib import Path
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
+from .compose_read import ComposeReadService
 from .docker_read import DockerReadService
 from .docker_write import DockerWriteService
 from .models import (
+    ComposeReadResult,
     ConnectionProfileListResult,
     ConnectionState,
     ConnectionValidationResult,
@@ -79,6 +81,10 @@ def create_docker_read_service() -> DockerReadService:
 
 def create_docker_write_service() -> DockerWriteService:
     return DockerWriteService(ProcessRunner(), create_service())
+
+
+def create_compose_read_service() -> ComposeReadService:
+    return ComposeReadService(ProcessRunner(), create_service())
 
 
 @mcp.tool(name="connect_connection_profile", annotations=READ_ONLY_EXTERNAL)
@@ -245,6 +251,35 @@ async def remove_container_docker(
 
     return await create_docker_write_service().lifecycle(
         profile_id, "rm", container_name, confirmation
+    )
+
+
+@mcp.tool(name="inspect_compose_project_docker", annotations=READ_ONLY_EXTERNAL)
+async def inspect_compose_project_docker(
+    profile_id: str, project_path: str, compose_file: str | None = None
+) -> ComposeReadResult:
+    """Inspect Compose service names without returning secret values."""
+
+    return await create_compose_read_service().inspect(profile_id, project_path, compose_file)
+
+
+@mcp.tool(name="compose_ps_docker", annotations=READ_ONLY_EXTERNAL)
+async def compose_ps_docker(
+    profile_id: str, project_path: str, compose_file: str | None = None
+) -> ComposeReadResult:
+    """List Compose runtime metadata through an authorized profile."""
+
+    return await create_compose_read_service().ps(profile_id, project_path, compose_file)
+
+
+@mcp.tool(name="compose_logs_docker", annotations=READ_ONLY_EXTERNAL)
+async def compose_logs_docker(
+    profile_id: str, project_path: str, compose_file: str | None = None, tail: int = 100
+) -> ComposeReadResult:
+    """Return bounded and redacted Compose logs as untrusted data."""
+
+    return await create_compose_read_service().logs(
+        profile_id, project_path, compose_file, tail
     )
 
 
