@@ -150,3 +150,19 @@ Para ejecutar se debe indicar `dry_run=false` y
 respectivamente `CONFIRM_START`, `CONFIRM_STOP`, `CONFIRM_RESTART` y
 `CONFIRM_RM`. Solo se permiten operaciones sobre contenedores gestionados por
 el MCP.
+
+Compose también requiere un perfil explícito para las consultas de solo lectura:
+
+```text
+mcp-connection-synsfuture.inspect_compose_project_docker(
+  profile_id="docker-remote1",
+  project_path="/ruta/al/proyecto"
+)
+
+mcp-connection-synsfuture.compose_ps_docker(
+  profile_id="docker-remote1",
+  project_path="/ruta/al/proyecto"
+)
+```
+
+Los resultados no incluyen valores de entorno ni credenciales del proyecto.

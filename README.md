@@ -193,6 +193,9 @@ start_container_docker(profile_id, container_name, confirmation?)
 stop_container_docker(profile_id, container_name, confirmation?)
 restart_container_docker(profile_id, container_name, confirmation?)
 remove_container_docker(profile_id, container_name, confirmation?)
+inspect_compose_project_docker(profile_id, project_path, compose_file?)
+compose_ps_docker(profile_id, project_path, compose_file?)
+compose_logs_docker(profile_id, project_path, compose_file?, tail?)
 ```
 
 `profile_id` es el identificador del perfil de conexión preconfigurado. En un
