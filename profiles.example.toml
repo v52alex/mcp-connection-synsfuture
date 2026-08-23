@@ -1,0 +1,10 @@
+# Perfiles no secretos. Copiar a un archivo local fuera del repositorio si se
+# desea utilizar el MCP. Las claves viven en ssh-agent, Keychain o ~/.ssh/config.
+
+[profiles.docker-remote1]
+type = "docker-context"
+docker_context = "docker-remote1"
+ssh_profile = "docker-remote1"
+enabled = true
+capabilities = ["read"]
+
