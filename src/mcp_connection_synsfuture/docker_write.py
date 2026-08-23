@@ -57,7 +57,7 @@ class DockerWriteService:
                 "dry_run=false para ejecutar.",
             )
         return await self._execute(
-            profile_id, "create_container", container_name, command, "created"
+            profile_id, "create_container", container_name, command, "created", preview
         )
 
     async def lifecycle(
@@ -127,7 +127,13 @@ class DockerWriteService:
         )
 
     async def _execute(
-        self, profile_id: str, operation: str, target: str, command: list[str], state: str
+        self,
+        profile_id: str,
+        operation: str,
+        target: str,
+        command: list[str],
+        state: str,
+        preview: list[str] | None = None,
     ) -> DockerMutationResult:
         connection = await self._connections.connect(profile_id)
         if connection.state is not ConnectionState.READY or not connection.docker_context:
@@ -145,7 +151,7 @@ class DockerWriteService:
                 "operation_failed",
                 False,
                 target,
-                command,
+                preview or command,
                 "La operación agotó el tiempo de espera.",
             )
         if result.returncode != 0:
@@ -155,7 +161,7 @@ class DockerWriteService:
                 "operation_failed",
                 False,
                 target,
-                command,
+                preview or command,
                 "Docker rechazó la operación.",
             )
         return self._result(
@@ -164,7 +170,7 @@ class DockerWriteService:
             state,
             True,
             target,
-            command,
+            preview or command,
             "Operación ejecutada correctamente.",
         )
 
