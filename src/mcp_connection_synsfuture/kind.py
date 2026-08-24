@@ -1,5 +1,6 @@
 """Controlled discovery and image loading for remote Kind clusters."""
 
+import base64
 import json
 import os
 import re
@@ -17,6 +18,7 @@ from .models import (
     KindManifestApplyResult,
     KindNamespaceEnsureResult,
     KindPrerequisitesResult,
+    RemotePlatform,
 )
 from .process import CommandResult
 from .profiles import ProfileRepository
@@ -585,12 +587,28 @@ class KindService:
                  "message": "La aplicación requiere confirmación explícita.",
                  "recommended_action": "Usa confirmation='APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE'."}
             )
-        try:
-            result = await self._remote(
-                profile, "kubectl", "--context", f"kind-{cluster_name}", "apply",
-                "--namespace", namespace, "-f", "-", input_data=path.read_bytes(),
-                timeout_seconds=120.0,
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        if profile.remote_platform is RemotePlatform.WINDOWS:
+            remote_script = (
+                "$p=Join-Path $env:TEMP 'mcp-kind-manifest.yaml';"
+                f"$b=[Convert]::FromBase64String('{encoded}');"
+                "[IO.File]::WriteAllBytes($p,$b);"
+                f"kubectl --context kind-{cluster_name} apply --namespace {namespace} -f $p;"
+                "$c=$LASTEXITCODE;Remove-Item -LiteralPath $p -Force;exit $c"
             )
+            remote_command = [
+                "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", remote_script
+            ]
+        else:
+            remote_script = (
+                "p=$(mktemp /tmp/mcp-kind-manifest.XXXXXX.yaml);"
+                f"printf '%s' '{encoded}' | base64 -d >\"$p\";"
+                f"kubectl --context kind-{cluster_name} apply --namespace {namespace} -f \"$p\";"
+                "c=$?;rm -f \"$p\";exit $c"
+            )
+            remote_command = ["sh", "-c", remote_script]
+        try:
+            result = await self._remote(profile, *remote_command, timeout_seconds=120.0)
         except TimeoutError:
             return KindManifestApplyResult.model_validate(
                 {**base, "state": "operation_failed", "executed": False,
