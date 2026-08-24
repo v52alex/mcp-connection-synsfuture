@@ -1,6 +1,7 @@
 """Controlled discovery and image loading for remote Kind clusters."""
 
 import base64
+import gzip
 import json
 import os
 import re
@@ -599,12 +600,15 @@ class KindService:
                  "message": "La aplicación requiere confirmación explícita.",
                  "recommended_action": "Usa confirmation='APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE'."}
             )
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        encoded = base64.b64encode(gzip.compress(path.read_bytes())).decode("ascii")
         if profile.remote_platform is RemotePlatform.WINDOWS:
             remote_script = (
                 "$p=Join-Path $env:TEMP 'mcp-kind-manifest.yaml';"
                 f"$b=[Convert]::FromBase64String('{encoded}');"
-                "[IO.File]::WriteAllBytes($p,$b);"
+                "$ms=New-Object IO.MemoryStream(,$b);"
+                "$gz=New-Object IO.Compression.GzipStream($ms,"
+                "[IO.Compression.CompressionMode]::Decompress);"
+                "$fs=[IO.File]::Create($p);$gz.CopyTo($fs);$fs.Close();$gz.Close();$ms.Close();"
                 f"kubectl --context kind-{cluster_name} apply --namespace {namespace} -f $p;"
                 "$c=$LASTEXITCODE;Remove-Item -LiteralPath $p -Force;exit $c"
             )
@@ -614,7 +618,7 @@ class KindService:
         else:
             remote_script = (
                 "p=$(mktemp /tmp/mcp-kind-manifest.XXXXXX.yaml);"
-                f"printf '%s' '{encoded}' | base64 -d >\"$p\";"
+                f"printf '%s' '{encoded}' | base64 -d | gzip -d >\"$p\";"
                 f"kubectl --context kind-{cluster_name} apply --namespace {namespace} -f \"$p\";"
                 "c=$?;rm -f \"$p\";exit $c"
             )
