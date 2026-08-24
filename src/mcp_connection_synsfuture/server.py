@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 from .compose_read import ComposeReadService
 from .compose_write import ComposeWriteService
 from .docker_build import DockerBuildService
+from .docker_pull import DockerPullService
 from .docker_read import DockerReadService
 from .docker_write import DockerWriteService
 from .kind import KindService
@@ -98,6 +99,10 @@ def create_docker_read_service() -> DockerReadService:
 
 def create_docker_write_service() -> DockerWriteService:
     return DockerWriteService(ProcessRunner(), create_service())
+
+
+def create_docker_pull_service() -> DockerPullService:
+    return DockerPullService(ProcessRunner(), create_service())
 
 
 def create_compose_read_service() -> ComposeReadService:
@@ -333,6 +338,20 @@ async def create_container_docker(
 
     return await create_docker_write_service().create(
         profile_id, image_reference, container_name, environment, dry_run, confirmation
+    )
+
+
+@mcp.tool(name="pull_image_docker", annotations=REMOTE_MUTATION)
+async def pull_image_docker(
+    profile_id: str,
+    image_reference: str,
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> DockerMutationResult:
+    """Plan or pull a remote Docker image after explicit confirmation."""
+
+    return await create_docker_pull_service().pull(
+        profile_id, image_reference, dry_run, confirmation
     )
 
 

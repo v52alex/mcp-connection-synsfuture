@@ -236,6 +236,19 @@ load_images_to_kind(
 )
 ```
 
+Para preparar imágenes base en el Docker remoto se usa `pull_image_docker`;
+también devuelve `already_exists` sin descargar de nuevo:
+
+```text
+pull_image_docker(
+  profile_id="docker-remote1",
+  image_reference="maven:3.9-eclipse-temurin-17",
+  dry_run=true
+)
+```
+
+La descarga requiere la confirmación `PULL_IMAGE_ON_DOCKER_REMOTE`.
+
 Su ejecución exige la confirmación `LOAD_IMAGES_TO_KIND_ON_WINDOWS_DOCKER`.
 Todavía no se habilitaron `kubectl apply`, rollout ni rollback; se añadirán
 después de validar el cluster y las imágenes.
