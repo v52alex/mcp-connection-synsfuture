@@ -106,6 +106,25 @@ async def test_load_image_is_dry_run_by_default(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_prometheus_helm_release_is_dry_run_by_default(tmp_path: Path) -> None:
+    runner = StubRunner(
+        [
+            CommandResult(0, "microservices\n", ""),
+            CommandResult(0, "node Ready\n", ""),
+            CommandResult(0, "v3.17.0\n", ""),
+        ]
+    )
+    service = KindService(runner, profiles(tmp_path), FakeConnections())
+
+    result = await service.install_helm_release("docker-remote1", "microservices")
+
+    assert result.state == "planned"
+    assert result.executed is False
+    assert "INSTALL_HELM_RELEASE_ON_DOCKER_REMOTE" in (result.recommended_action or "")
+    assert "prometheus-community/kube-prometheus-stack" in result.command_preview
+
+
+@pytest.mark.asyncio
 async def test_checks_docker_through_authorized_context(tmp_path: Path) -> None:
     runner = StubRunner(
         [

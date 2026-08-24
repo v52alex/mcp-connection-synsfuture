@@ -337,3 +337,22 @@ class KindNamespaceEnsureResult(BaseModel):
     message: str
     recommended_action: str | None = None
     documentation_hint: str = "Más información: consulta la documentación del MCP."
+
+
+class KindHelmReleaseResult(BaseModel):
+    """Dry-run or execution result for an allowlisted Helm release."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    cluster_name: str
+    release_name: str
+    chart: str
+    namespace: str
+    state: str
+    executed: bool
+    command_preview: list[str] = Field(default_factory=list)
+    message: str
+    diagnostic: str | None = None
+    recommended_action: str | None = None
+    documentation_hint: str = "Más información: consulta la documentación del MCP."

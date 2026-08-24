@@ -27,6 +27,7 @@ from .models import (
     KindClusterCreateResult,
     KindClusterInspectResult,
     KindClusterListResult,
+    KindHelmReleaseResult,
     KindImageLoadResult,
     KindManifestApplyResult,
     KindNamespaceEnsureResult,
@@ -290,6 +291,22 @@ async def ensure_kind_namespace(
 
     return await create_kind_service().ensure_namespace(
         profile_id, cluster_name, namespace, dry_run, confirmation
+    )
+
+
+@mcp.tool(name="install_helm_release", annotations=REMOTE_MUTATION)
+async def install_helm_release(
+    profile_id: str,
+    cluster_name: str,
+    release_name: str = "kube-prometheus-stack",
+    namespace: str = "monitoring",
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> KindHelmReleaseResult:
+    """Plan or install the allowlisted Prometheus Operator Helm release."""
+
+    return await create_kind_service().install_helm_release(
+        profile_id, cluster_name, release_name, namespace, dry_run, confirmation
     )
 
 

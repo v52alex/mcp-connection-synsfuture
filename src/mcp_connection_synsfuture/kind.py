@@ -15,6 +15,7 @@ from .models import (
     KindClusterInspectResult,
     KindClusterListResult,
     KindClusterSummary,
+    KindHelmReleaseResult,
     KindImageLoadResult,
     KindManifestApplyResult,
     KindNamespaceEnsureResult,
@@ -31,6 +32,9 @@ _SAFE_IMAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,254}$")
 LOAD_IMAGES_CONFIRMATION = "LOAD_IMAGES_TO_KIND_ON_WINDOWS_DOCKER"
 CREATE_CLUSTER_CONFIRMATION = "CREATE_KIND_CLUSTER_ON_DOCKER_REMOTE"
 ENSURE_NAMESPACE_CONFIRMATION = "ENSURE_KIND_NAMESPACE_ON_DOCKER_REMOTE"
+HELM_RELEASE_CONFIRMATION = "INSTALL_HELM_RELEASE_ON_DOCKER_REMOTE"
+PROMETHEUS_STACK_CHART = "prometheus-community/kube-prometheus-stack"
+PROMETHEUS_STACK_REPO = "https://prometheus-community.github.io/helm-charts"
 
 
 class CommandRunner(Protocol):
@@ -640,7 +644,7 @@ class KindService:
         workload_name: str,
         namespace: str,
     ) -> KindWorkloadInspectResult:
-        base = dict(
+        base: dict[str, Any] = dict(
             profile_id=profile_id,
             cluster_name=cluster_name,
             namespace=namespace,
@@ -817,6 +821,110 @@ class KindService:
         except json.JSONDecodeError:
             return {}
         return value if isinstance(value, dict) else {}
+
+    async def install_helm_release(
+        self,
+        profile_id: str,
+        cluster_name: str,
+        release_name: str = "kube-prometheus-stack",
+        namespace: str = "monitoring",
+        dry_run: bool = True,
+        confirmation: str | None = None,
+    ) -> KindHelmReleaseResult:
+        """Plan or install the allowlisted Prometheus Operator Helm chart."""
+
+        preview = [
+            "helm", "repo", "add", "prometheus-community", PROMETHEUS_STACK_REPO,
+            "--force-update", "&&", "helm", "upgrade", "--install", release_name,
+            PROMETHEUS_STACK_CHART, "--namespace", namespace, "--create-namespace",
+            "--set", "prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false",
+        ]
+        base: dict[str, Any] = dict(
+            profile_id=profile_id,
+            cluster_name=cluster_name,
+            release_name=release_name,
+            chart=PROMETHEUS_STACK_CHART,
+            namespace=namespace,
+            command_preview=preview,
+        )
+        if not (_SAFE_NAME.fullmatch(cluster_name) and _SAFE_NAME.fullmatch(release_name)
+                and _SAFE_NAME.fullmatch(namespace)):
+            return KindHelmReleaseResult(
+                **base, state="validation_failed", executed=False,
+                message="El clúster, release o namespace contiene caracteres no permitidos.",
+                recommended_action="Usa nombres en minúsculas, números, puntos o guiones.",
+            )
+        profile, error = await self._authorized_profile(profile_id)
+        if error is not None or profile is None:
+            return KindHelmReleaseResult(
+                **base, state="connection_failed", executed=False,
+                message=error or "Perfil no disponible.",
+                recommended_action="Valida el perfil autorizado antes de instalar Helm.",
+            )
+        if not dry_run and confirmation != HELM_RELEASE_CONFIRMATION:
+            return KindHelmReleaseResult(
+                **base, state="confirmation_required", executed=False,
+                message="La instalación Helm requiere confirmación explícita.",
+                recommended_action=f"Proporciona confirmation={HELM_RELEASE_CONFIRMATION}.",
+            )
+        clusters = await self.list_clusters(profile_id)
+        cluster = next((item for item in clusters.clusters if item.name == cluster_name), None)
+        if cluster is None or not cluster.reachable:
+            return KindHelmReleaseResult(
+                **base, state="cluster_unavailable", executed=False,
+                message="El clúster solicitado no existe o no es alcanzable.",
+                recommended_action="Lista los clústeres y selecciona uno alcanzable.",
+            )
+        try:
+            helm = await self._remote(profile, "helm", "version", "--short")
+        except (FileNotFoundError, TimeoutError):
+            return KindHelmReleaseResult(
+                **base, state="prerequisites_failed", executed=False,
+                message="No se pudo validar Helm en el host remoto.",
+                recommended_action="Instala Helm en el host remoto y vuelve a intentar.",
+            )
+        if helm.returncode != 0:
+            return KindHelmReleaseResult(
+                **base, state="prerequisites_failed", executed=False,
+                message="Helm no está disponible en el host remoto.",
+                diagnostic=self._sanitize_diagnostic(helm.stderr),
+                recommended_action="Instala Helm en el host remoto y vuelve a intentar.",
+            )
+        if dry_run:
+            return KindHelmReleaseResult(
+                **base, state="planned", executed=False,
+                message="Instalación Helm planificada; no se ejecutó ningún cambio.",
+                recommended_action=f"Confirma con {HELM_RELEASE_CONFIRMATION} para ejecutar.",
+            )
+        commands = [
+            (
+                "helm", "repo", "add", "prometheus-community", PROMETHEUS_STACK_REPO,
+                "--force-update",
+            ),
+            ("helm", "upgrade", "--install", release_name, PROMETHEUS_STACK_CHART,
+             "--namespace", namespace, "--create-namespace",
+             "--set", "prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false"),
+        ]
+        for command in commands:
+            try:
+                result = await self._remote(profile, *command)
+            except (FileNotFoundError, TimeoutError):
+                return KindHelmReleaseResult(
+                    **base, state="execution_failed", executed=False,
+                    message="No se pudo ejecutar la operación Helm remota.",
+                    recommended_action="Verifica la conexión y el acceso al registry de charts.",
+                )
+            if result.returncode != 0:
+                return KindHelmReleaseResult(
+                    **base, state="execution_failed", executed=False,
+                    message="Helm no pudo instalar el release.",
+                    diagnostic=self._sanitize_diagnostic(result.stderr or result.stdout),
+                    recommended_action="Revisa Helm y la conectividad al repositorio de charts.",
+                )
+        return KindHelmReleaseResult(
+            **base, state="installed", executed=True,
+            message="Release Helm instalado correctamente.",
+        )
 
     async def ensure_namespace(
         self,
