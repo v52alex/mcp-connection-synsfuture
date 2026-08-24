@@ -58,10 +58,14 @@ class DockerBuildService:
             raise ValueError("image_name or tag has an invalid format")
         inspection = self.inspect_project(project_path, dockerfile)
         reference = f"{image_name}:{tag}"
+        project = Path(inspection.project_path)
+        dockerfile_relative = str(
+            Path(inspection.dockerfile_path or dockerfile).relative_to(project)
+        )
         command = [
             "build",
             "--file",
-            inspection.dockerfile_path or str(Path(project_path) / dockerfile),
+            dockerfile_relative,
             "--tag",
             reference,
             inspection.project_path,
