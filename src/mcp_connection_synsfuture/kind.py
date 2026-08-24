@@ -441,7 +441,17 @@ class KindService:
                 "El cluster o perfil no está disponible.",
                 command_preview,
             )
-        image = await self._remote(profile, "docker", "image", "inspect", image_reference)
+        try:
+            image = await self._remote(profile, "docker", "image", "inspect", image_reference)
+        except TimeoutError:
+            return self._load_failure(
+                profile_id,
+                cluster_name,
+                image_reference,
+                "La inspección de la imagen agotó el tiempo de espera.",
+                command_preview,
+                "Verifica la disponibilidad del Docker remoto.",
+            )
         if image.returncode != 0:
             return self._load_failure(
                 profile_id,
@@ -471,9 +481,27 @@ class KindService:
                 command_preview,
                 "Usa la confirmación LOAD_IMAGES_TO_KIND_ON_WINDOWS_DOCKER.",
             )
-        loaded = await self._remote(
-            profile, "kind", "load", "docker-image", image_reference, "--name", cluster_name
-        )
+        try:
+            loaded = await self._remote(
+                profile,
+                "kind",
+                "load",
+                "docker-image",
+                image_reference,
+                "--name",
+                cluster_name,
+                timeout_seconds=300.0,
+            )
+        except TimeoutError:
+            return self._load_failure(
+                profile_id,
+                cluster_name,
+                image_reference,
+                "Kind agotó el tiempo de espera al cargar la imagen.",
+                command_preview,
+                "La carga puede tardar varios minutos para imágenes grandes; "
+                "reintenta la operación.",
+            )
         succeeded = loaded.returncode == 0
         diagnostic = self._sanitize_diagnostic(loaded.stderr or loaded.stdout)
         return KindImageLoadResult(
@@ -647,7 +675,12 @@ class KindService:
             return None, "El perfil no tiene un alias SSH autorizado para Kind."
         return profile, None
 
-    async def _remote(self, profile: ConnectionProfile, *args: str) -> CommandResult:
+    async def _remote(
+        self,
+        profile: ConnectionProfile,
+        *args: str,
+        timeout_seconds: float | None = None,
+    ) -> CommandResult:
         assert profile.ssh_profile is not None
         return await self._runner.run(
             [
@@ -661,7 +694,7 @@ class KindService:
                 profile.ssh_profile,
                 *args,
             ],
-            self._timeout,
+            timeout_seconds or self._timeout,
         )
 
     @staticmethod
