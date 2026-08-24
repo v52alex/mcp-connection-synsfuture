@@ -338,6 +338,24 @@ async def inspect_kind_workload(
     )
 
 
+@mcp.tool(name="apply_kind_secret_from_env", annotations=REMOTE_MUTATION)
+async def apply_kind_secret_from_env(
+    profile_id: str,
+    cluster_name: str,
+    secret_name: str,
+    env_file: str,
+    keys: list[str],
+    namespace: str = "microservices",
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> KindManifestApplyResult:
+    """Apply selected local .env keys as a Kubernetes Secret without exposing values."""
+
+    return await create_kind_service().apply_secret_from_env(
+        profile_id, cluster_name, secret_name, env_file, keys, namespace, dry_run, confirmation
+    )
+
+
 @mcp.tool(name="list_images_docker", annotations=READ_ONLY_EXTERNAL)
 async def list_images_docker(profile_id: str) -> DockerReadResult:
     """List sanitized images through an authorized Docker context."""

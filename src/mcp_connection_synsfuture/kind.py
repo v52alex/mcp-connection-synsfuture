@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -736,6 +737,63 @@ class KindService:
             recommended_action=(None if ready >= desired and desired > 0
                                 else "Revisa los pods y eventos del workload."),
         )
+
+    async def apply_secret_from_env(
+        self,
+        profile_id: str,
+        cluster_name: str,
+        secret_name: str,
+        env_file: str,
+        keys: list[str],
+        namespace: str,
+        dry_run: bool,
+        confirmation: str | None,
+    ) -> KindManifestApplyResult:
+        if not _SAFE_NAME.fullmatch(cluster_name) or not _SAFE_NAME.fullmatch(secret_name):
+            raise ValueError("cluster_name or secret_name has an invalid format")
+        if not _SAFE_NAME.fullmatch(namespace) or not keys:
+            raise ValueError("namespace and keys are required")
+        if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) for key in keys):
+            raise ValueError("keys contain an invalid environment variable name")
+        values = self._read_env_keys(Path(env_file).expanduser().resolve(), keys)
+        missing = [key for key in keys if key not in values]
+        if missing:
+            raise ValueError(f"Missing requested environment keys: {', '.join(missing)}")
+        lines = [
+            "apiVersion: v1", "kind: Secret", "metadata:",
+            f"  name: {secret_name}", f"  namespace: {namespace}",
+            "type: Opaque", "data:",
+        ]
+        lines.extend(f"  {key}: {base64.b64encode(values[key].encode()).decode()}" for key in keys)
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as handle:
+                handle.write("\n".join(lines) + "\n")
+                temporary = Path(handle.name)
+            result = await self.apply_manifest(
+                profile_id, cluster_name, str(temporary), namespace, dry_run, confirmation
+            )
+            return result.model_copy(
+                update={"manifest_path": str(Path(env_file).expanduser().resolve())}
+            )
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    @staticmethod
+    def _read_env_keys(path: Path, keys: list[str]) -> dict[str, str]:
+        requested = set(keys)
+        values: dict[str, str] = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith("export "):
+                stripped = stripped[7:].lstrip()
+            name, separator, value = stripped.partition("=")
+            if separator and name.strip() in requested:
+                values[name.strip()] = value.strip().strip("'\"")
+        return values
 
     @staticmethod
     def _parse_json(raw: str) -> dict[str, Any]:
