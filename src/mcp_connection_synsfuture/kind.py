@@ -3,6 +3,7 @@
 import json
 import os
 import re
+from pathlib import Path
 from typing import Protocol
 
 from .models import (
@@ -13,6 +14,7 @@ from .models import (
     KindClusterListResult,
     KindClusterSummary,
     KindImageLoadResult,
+    KindManifestApplyResult,
     KindNamespaceEnsureResult,
     KindPrerequisitesResult,
 )
@@ -28,7 +30,12 @@ ENSURE_NAMESPACE_CONFIRMATION = "ENSURE_KIND_NAMESPACE_ON_DOCKER_REMOTE"
 
 
 class CommandRunner(Protocol):
-    async def run(self, args: list[str], timeout_seconds: float) -> CommandResult: ...
+    async def run(
+        self,
+        args: list[str],
+        timeout_seconds: float,
+        input_data: bytes | None = None,
+    ) -> CommandResult: ...
 
 
 class KindService:
@@ -525,6 +532,87 @@ class KindService:
             documentation_hint=MCP_DOCUMENTATION_HINT,
         )
 
+    async def apply_manifest(
+        self,
+        profile_id: str,
+        cluster_name: str,
+        manifest_path: str,
+        namespace: str,
+        dry_run: bool = True,
+        confirmation: str | None = None,
+    ) -> KindManifestApplyResult:
+        path = Path(manifest_path).expanduser().resolve()
+        preview = [
+            "ssh", "<ssh-profile>", "kubectl", "--context", f"kind-{cluster_name}",
+            "apply", "--namespace", namespace, "-f", "-",
+        ]
+        base: dict[str, object] = dict(
+            profile_id=profile_id,
+            cluster_name=cluster_name,
+            namespace=namespace,
+            manifest_path=str(path),
+            command_preview=preview,
+        )
+        if not path.is_file():
+            return KindManifestApplyResult.model_validate(
+                {**base, "state": "validation_failed", "executed": False,
+                 "message": "El manifiesto no existe."}
+            )
+        listed = await self.list_clusters(profile_id)
+        cluster = next((item for item in listed.clusters if item.name == cluster_name), None)
+        profile = self._profiles.get(profile_id)
+        if (
+            cluster is None
+            or not cluster.reachable
+            or profile is None
+            or profile.ssh_profile is None
+        ):
+            return KindManifestApplyResult.model_validate(
+                {**base, "state": "connection_failed", "executed": False,
+                 "message": "El cluster o perfil no está disponible."}
+            )
+        if dry_run:
+            return KindManifestApplyResult.model_validate(
+                {**base, "state": "planned", "executed": False,
+                 "message": "Aplicación planificada; el cluster no fue modificado.",
+                 "recommended_action": (
+                     "Confirma con APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE para ejecutar."
+                 )}
+            )
+        if confirmation != "APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE":
+            return KindManifestApplyResult.model_validate(
+                {**base, "state": "confirmation_required", "executed": False,
+                 "message": "La aplicación requiere confirmación explícita.",
+                 "recommended_action": "Usa confirmation='APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE'."}
+            )
+        try:
+            result = await self._remote(
+                profile, "kubectl", "--context", f"kind-{cluster_name}", "apply",
+                "--namespace", namespace, "-f", "-", input_data=path.read_bytes(),
+                timeout_seconds=120.0,
+            )
+        except TimeoutError:
+            return KindManifestApplyResult.model_validate(
+                {**base, "state": "operation_failed", "executed": False,
+                 "message": "kubectl agotó el tiempo de espera.",
+                 "recommended_action": "Revisa el estado del cluster y reintenta."}
+            )
+        success = result.returncode == 0
+        return KindManifestApplyResult.model_validate(
+            {**base,
+             "state": "applied" if success else "operation_failed",
+             "executed": success,
+             "message": (
+                 "Manifiesto aplicado correctamente."
+                 if success
+                 else "kubectl no pudo aplicar el manifiesto."
+             ),
+             "diagnostic": self._sanitize_diagnostic(result.stderr or result.stdout),
+             "recommended_action": (
+                 None if success else "Revisa el diagnóstico y el namespace remoto."
+             )}
+        )
+
     async def ensure_namespace(
         self,
         profile_id: str,
@@ -680,22 +768,23 @@ class KindService:
         profile: ConnectionProfile,
         *args: str,
         timeout_seconds: float | None = None,
+        input_data: bytes | None = None,
     ) -> CommandResult:
         assert profile.ssh_profile is not None
-        return await self._runner.run(
-            [
-                "ssh",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "ConnectTimeout=10",
-                "-o",
-                "PreferredAuthentications=publickey",
-                profile.ssh_profile,
-                *args,
-            ],
-            timeout_seconds or self._timeout,
-        )
+        command = [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "PreferredAuthentications=publickey",
+            profile.ssh_profile,
+            *args,
+        ]
+        if input_data is None:
+            return await self._runner.run(command, timeout_seconds or self._timeout)
+        return await self._runner.run(command, timeout_seconds or self._timeout, input_data)
 
     @staticmethod
     def _list_failure(

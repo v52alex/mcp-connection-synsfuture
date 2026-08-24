@@ -28,6 +28,7 @@ from .models import (
     KindClusterInspectResult,
     KindClusterListResult,
     KindImageLoadResult,
+    KindManifestApplyResult,
     KindNamespaceEnsureResult,
     KindPrerequisitesResult,
     ProfileType,
@@ -303,6 +304,22 @@ async def load_images_to_kind(
 
     return await create_kind_service().load_image(
         profile_id, cluster_name, image_reference, dry_run, confirmation
+    )
+
+
+@mcp.tool(name="apply_kind_manifest", annotations=REMOTE_MUTATION)
+async def apply_kind_manifest(
+    profile_id: str,
+    cluster_name: str,
+    manifest_path: str,
+    namespace: str = "microservices",
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> KindManifestApplyResult:
+    """Plan or apply a local Kubernetes manifest through an authorized Kind profile."""
+
+    return await create_kind_service().apply_manifest(
+        profile_id, cluster_name, manifest_path, namespace, dry_run, confirmation
     )
 
 

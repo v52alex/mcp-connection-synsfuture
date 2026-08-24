@@ -254,6 +254,24 @@ class KindImageLoadResult(BaseModel):
     documentation_hint: str = "Más información: consulta la documentación del MCP."
 
 
+class KindManifestApplyResult(BaseModel):
+    """Dry-run or execution result for applying a local Kubernetes manifest."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    cluster_name: str
+    namespace: str
+    manifest_path: str
+    state: str
+    executed: bool
+    command_preview: list[str] = Field(default_factory=list)
+    message: str
+    diagnostic: str | None = None
+    recommended_action: str | None = None
+    documentation_hint: str = "Más información: consulta la documentación del MCP."
+
+
 class KindPrerequisitesResult(BaseModel):
     """Availability checks for the fixed Kind remote toolchain."""
 
