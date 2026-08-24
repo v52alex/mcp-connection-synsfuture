@@ -6,7 +6,12 @@ import tempfile
 from pathlib import Path
 
 from .docker_read import IMAGE_PATTERN
-from .models import ConnectionState, DockerBuildResult, DockerProjectInspectionResult
+from .models import (
+    ConnectionState,
+    DockerBuildResult,
+    DockerProjectInspectionResult,
+    RemotePlatform,
+)
 from .profiles import ProfileRepository
 from .service import MCP_DOCUMENTATION_HINT, CommandRunner, ConnectionProfileService
 
@@ -124,16 +129,28 @@ class DockerBuildService:
         try:
             archive_path = self._create_context_archive(project)
             context_bytes = archive_path.read_bytes()
-            remote_script = (
-                "$p=Join-Path $env:TEMP 'mcp-build-context.tar';"
-                "$i=[Console]::OpenStandardInput();"
-                "$o=[IO.File]::Open($p,[IO.FileMode]::Create);"
-                "$i.CopyTo($o);$o.Dispose();"
-                f"$cargs='docker --context desktop-linux build --tag {reference} - < \"'+$p+'\"';"
-                "cmd.exe /c $cargs;"
-                "$c=$LASTEXITCODE;"
-                "Remove-Item -LiteralPath $p -Force;exit $c"
-            )
+            if profile.remote_platform is RemotePlatform.WINDOWS:
+                remote_script = (
+                    "$p=Join-Path $env:TEMP 'mcp-build-context.tar';"
+                    "$i=[Console]::OpenStandardInput();"
+                    "$o=[IO.File]::Open($p,[IO.FileMode]::Create);"
+                    "$i.CopyTo($o);$o.Dispose();"
+                    f"$cargs='{profile.docker_command} build --tag {reference} - < \"'+$p+'\"';"
+                    "cmd.exe /c $cargs;"
+                    "$c=$LASTEXITCODE;"
+                    "Remove-Item -LiteralPath $p -Force;exit $c"
+                )
+                remote_command = [
+                    "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", remote_script
+                ]
+            else:
+                remote_script = (
+                    "p=$(mktemp /tmp/mcp-build-context.XXXXXX.tar);"
+                    "cat >\"$p\";"
+                    f"{profile.docker_command} build --tag {reference} - <\"$p\";"
+                    "c=$?;rm -f \"$p\";exit $c"
+                )
+                remote_command = ["sh", "-c", remote_script]
             result = await self._runner.run(
                 [
                     "ssh",
@@ -144,11 +161,7 @@ class DockerBuildService:
                     "-o",
                     "PreferredAuthentications=publickey",
                     profile.ssh_profile,
-                    "powershell.exe",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    remote_script,
+                    *remote_command,
                 ],
                 self._timeout,
                 context_bytes,

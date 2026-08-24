@@ -16,6 +16,7 @@ from .models import (
     ConnectionState,
     ConnectionValidationResult,
     ProfileType,
+    RemotePlatform,
 )
 from .process import CommandResult
 from .profiles import ProfileRepository, validate_profile_shape
@@ -85,6 +86,8 @@ class ConnectionProfileService:
         ssh_profile: str | None,
         capabilities: list[str],
         profile_type: ProfileType = ProfileType.DOCKER_CONTEXT,
+        remote_platform: RemotePlatform = RemotePlatform.WINDOWS,
+        docker_command: str = "docker",
     ) -> ConnectionValidationResult:
         """Register safe local metadata; never stores credentials or keys."""
 
@@ -94,6 +97,8 @@ class ConnectionProfileService:
                 type=profile_type,
                 docker_context=docker_context,
                 ssh_profile=ssh_profile or docker_context,
+                remote_platform=remote_platform,
+                docker_command=docker_command,
                 enabled=True,
                 capabilities=tuple(capabilities),
             )
@@ -166,6 +171,7 @@ class ConnectionProfileService:
                 profile_type=profile.type,
                 docker_context=profile.docker_context,
                 ssh_profile=profile.ssh_profile,
+                remote_platform=profile.remote_platform,
                 enabled=profile.enabled,
                 capabilities=profile.capabilities,
             )
@@ -459,7 +465,14 @@ class ConnectionProfileService:
             lines.append(f'docker_context = "{profile.docker_context}"')
         if profile.ssh_profile:
             lines.append(f'ssh_profile = "{profile.ssh_profile}"')
-        lines.extend(["enabled = true", f"capabilities = [{capabilities}]"])
+        lines.extend(
+            [
+                f'remote_platform = "{profile.remote_platform.value}"',
+                f'docker_command = "{profile.docker_command}"',
+                "enabled = true",
+                f"capabilities = [{capabilities}]",
+            ]
+        )
         return "\n".join(lines)
 
     @staticmethod

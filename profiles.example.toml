@@ -5,6 +5,7 @@
 type = "docker-context"
 docker_context = "docker-remote1"
 ssh_profile = "docker-remote1"
+remote_platform = "windows"
+docker_command = "docker"
 enabled = true
 capabilities = ["read"]
-

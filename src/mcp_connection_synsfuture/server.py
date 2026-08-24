@@ -31,6 +31,7 @@ from .models import (
     KindNamespaceEnsureResult,
     KindPrerequisitesResult,
     ProfileType,
+    RemotePlatform,
 )
 from .process import ProcessRunner
 from .profiles import ProfileRepository
@@ -183,6 +184,8 @@ async def register_connection_profile(
     ssh_profile: str | None = None,
     profile_type: str = "docker-context",
     capabilities: list[str] | None = None,
+    remote_platform: str = "windows",
+    docker_command: str = "docker",
 ) -> ConnectionValidationResult:
     """Register safe Docker or generic SSH profile metadata locally."""
 
@@ -196,6 +199,16 @@ async def register_connection_profile(
             recommended_action="Usa profile_type='docker-context' o profile_type='ssh-profile'.",
             documentation_hint=MCP_DOCUMENTATION_HINT,
         )
+    try:
+        selected_platform = RemotePlatform(remote_platform)
+    except ValueError:
+        return ConnectionValidationResult(
+            profile_id=profile_id,
+            state=ConnectionState.INVALID_CONFIGURATION,
+            message=f"Plataforma remota no soportada: {remote_platform}.",
+            recommended_action="Usa remote_platform='windows', 'linux' o 'darwin'.",
+            documentation_hint=MCP_DOCUMENTATION_HINT,
+        )
 
     return create_service().register(
         profile_id=profile_id,
@@ -203,6 +216,8 @@ async def register_connection_profile(
         ssh_profile=ssh_profile,
         profile_type=selected_type,
         capabilities=capabilities or ["read"],
+        remote_platform=selected_platform,
+        docker_command=docker_command,
     )
 
 

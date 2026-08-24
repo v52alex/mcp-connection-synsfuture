@@ -126,6 +126,8 @@ class ProfileRepository:
         ]
         if profile.ssh_profile:
             lines.append(f'ssh_profile = "{profile.ssh_profile}"')
+        lines.append(f'remote_platform = "{profile.remote_platform.value}"')
+        lines.append(f'docker_command = "{profile.docker_command}"')
         lines.extend(
             [f"enabled = {str(profile.enabled).lower()}", f"capabilities = [{capabilities}]"]
         )

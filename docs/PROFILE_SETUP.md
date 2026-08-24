@@ -302,11 +302,18 @@ El archivo debe contener:
 type = "docker-context"
 docker_context = "docker-remote1"
 ssh_profile = "docker-remote1"
+remote_platform = "windows" # windows, linux o darwin
+docker_command = "docker"   # comando disponible en el PATH remoto
 enabled = true
 capabilities = ["read"]
 ```
 
 `profiles.toml` es local y está excluido de Git.
+
+`remote_platform` controla el intérprete que usa el build remoto y evita asumir
+rutas de Docker específicas del sistema operativo. `docker_command` permite
+indicar un ejecutable alternativo si Docker no está disponible en el `PATH` del
+host remoto. Los builds siempre se ejecutan mediante el perfil autorizado.
 
 ### Perfil para el contexto Windows
 
@@ -318,6 +325,8 @@ Si el contexto Docker remoto de Windows ya fue creado con el nombre
 type = "docker-context"
 docker_context = "windows-docker"
 ssh_profile = "windows-docker"
+remote_platform = "windows"
+docker_command = "docker"
 enabled = true
 capabilities = ["read"]
 ```

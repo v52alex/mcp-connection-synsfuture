@@ -306,7 +306,7 @@ Las herramientas disponibles actualmente son:
 
 ```text
 connect_connection_profile(profile_id?)
-register_connection_profile(profile_id, docker_context?, ssh_profile?, profile_type?, capabilities?)
+register_connection_profile(profile_id, docker_context?, ssh_profile?, profile_type?, capabilities?, remote_platform?, docker_command?)
 remove_connection_profile(profile_id)
 list_connection_profiles()
 check_kind_prerequisites(profile_id)

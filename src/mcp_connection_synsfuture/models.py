@@ -11,6 +11,14 @@ class ProfileType(StrEnum):
     SSH_PROFILE = "ssh-profile"
 
 
+class RemotePlatform(StrEnum):
+    """Operating system used by the authorized remote Docker host."""
+
+    WINDOWS = "windows"
+    LINUX = "linux"
+    DARWIN = "darwin"
+
+
 class ConnectionState(StrEnum):
     PROFILE_REQUIRED = "profile_required"
     PROFILE_REGISTERED = "profile_registered"
@@ -37,6 +45,8 @@ class ConnectionProfile(BaseModel):
     type: ProfileType
     docker_context: str | None = None
     ssh_profile: str | None = None
+    remote_platform: RemotePlatform = RemotePlatform.WINDOWS
+    docker_command: str = Field(default="docker", pattern=r"^[A-Za-z0-9_.:/\\ -]{1,200}$")
     enabled: bool = True
     capabilities: tuple[str, ...] = ()
 
@@ -69,6 +79,7 @@ class ConnectionProfileSummary(BaseModel):
     profile_type: ProfileType
     docker_context: str | None = None
     ssh_profile: str | None = None
+    remote_platform: RemotePlatform = RemotePlatform.WINDOWS
     enabled: bool
     capabilities: tuple[str, ...] = ()
 
