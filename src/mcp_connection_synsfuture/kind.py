@@ -693,6 +693,9 @@ class KindService:
         pod_records = [
             {"name": item.get("metadata", {}).get("name"),
              "phase": item.get("status", {}).get("phase"),
+             "reason": item.get("status", {}).get("reason"),
+             "message": item.get("status", {}).get("message"),
+             "node": item.get("spec", {}).get("nodeName"),
              "ready": any(
                  condition.get("type") == "Ready" and condition.get("status") == "True"
                  for condition in item.get("status", {}).get("conditions", [])
