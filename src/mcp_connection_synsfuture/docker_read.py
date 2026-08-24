@@ -112,6 +112,14 @@ class DockerReadService:
 
     @staticmethod
     def _parse_json_records(raw: str) -> list[dict[str, Any]]:
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        if isinstance(payload, dict):
+            return [payload]
         records: list[dict[str, Any]] = []
         for line in raw.splitlines():
             try:
