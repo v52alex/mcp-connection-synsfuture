@@ -8,7 +8,7 @@ configuradas por el administrador del equipo.
 ```yaml
 project_workflow:
   type: new-development
-  status: discovery
+  status: in-development
   methodology: scrum
   owner: Alexis
   last_reviewed: 2026-08-23
@@ -85,6 +85,9 @@ fase inicial; cualquier endpoint web futuro deberá registrarse explícitamente.
 | P1 | Validar perfiles SSH separados de Docker | completed |
 | P1 | Exponer herramientas MCP de solo lectura | pending |
 | P2 | Migrar operaciones Docker controladas | pending |
+| P1 | Descubrir e inspeccionar clusters Kind por perfil autorizado | in-progress |
+| P1 | Cargar imágenes Docker en Kind con dry-run y confirmación | in-progress |
+| P1 | Aplicar manifiestos, rollout y rollback Kubernetes | pending |
 
 ## Definition of Ready
 
@@ -126,6 +129,85 @@ alias SSH preconfigurado y se validó mediante el cliente MCP:
 - No se crearon, iniciaron, detuvieron ni eliminaron contenedores.
 - La herramienta está anotada como lectura externa e idempotente para que Codex
   pueda ejecutarla sin tratar la validación como una mutación.
+
+### Prueba real contra Windows
+
+Para ejecutar las herramientas Docker contra el equipo Windows se utiliza el
+contexto Docker preconfigurado `windows-docker`. El MCP no recibe la IP ni el
+usuario: resuelve ambos datos mediante el perfil local y el alias SSH asociado.
+
+Registra el perfil una sola vez en el equipo donde está instalado el MCP:
+
+```text
+mcp-connection-synsfuture.register_connection_profile(
+  profile_id="windows-docker",
+  docker_context="windows-docker",
+  ssh_profile="windows-docker",
+  capabilities=["read"]
+)
+```
+
+Valida la conexión y luego ejecuta una operación Docker de solo lectura:
+
+```text
+mcp-connection-synsfuture.connect_connection_profile(
+  profile_id="windows-docker"
+)
+
+mcp-connection-synsfuture.list_containers_docker(
+  profile_id="windows-docker"
+)
+```
+
+Todas las herramientas Docker, incluidas Compose y las operaciones de
+construcción o ciclo de vida, reciben el mismo `profile_id`. Internamente el
+MCP ejecuta Docker con el contexto autorizado, equivalente a:
+
+```bash
+docker --context windows-docker ps -a
+```
+
+El comando anterior solo sirve para comprobar la preparación local; en una
+sesión MCP se debe utilizar la herramienta correspondiente.
+
+### Kind/Kubernetes remoto
+
+El soporte Kind se ejecuta sobre el mismo `profile_id` autorizado y utiliza su
+alias SSH preconfigurado. La primera consulta es siempre:
+
+```text
+list_kind_clusters(profile_id="docker-remote1")
+```
+
+La herramienta lista todos los clusters reportados por `kind` y comprueba el
+acceso real de `kubectl` a cada contexto. Recomienda `microservices` cuando está
+disponible, pero no selecciona ni modifica ningún cluster automáticamente.
+
+Después se puede inspeccionar el cluster elegido:
+
+```text
+inspect_kind_cluster(
+  profile_id="docker-remote1",
+  cluster_name="microservices",
+  namespace="microservices"
+)
+```
+
+La carga de imágenes es el primer paso mutante y permanece en `dry_run` por
+defecto:
+
+```text
+load_images_to_kind(
+  profile_id="docker-remote1",
+  cluster_name="microservices",
+  image_reference="eureka-server:1.0",
+  dry_run=true
+)
+```
+
+Su ejecución exige la confirmación `LOAD_IMAGES_TO_KIND_ON_WINDOWS_DOCKER`.
+Todavía no se habilitaron `kubectl apply`, rollout ni rollback; se añadirán
+después de validar el cluster y las imágenes.
 
 ## Cliente MCP de desarrollo
 
@@ -183,6 +265,9 @@ connect_connection_profile(profile_id?)
 register_connection_profile(profile_id, docker_context?, ssh_profile?, profile_type?, capabilities?)
 remove_connection_profile(profile_id)
 list_connection_profiles()
+list_kind_clusters(profile_id)
+inspect_kind_cluster(profile_id, cluster_name, namespace?)
+load_images_to_kind(profile_id, cluster_name, image_reference, dry_run?, confirmation?)
 list_images_docker(profile_id)
 inspect_image_docker(profile_id, image_reference)
 list_containers_docker(profile_id)
@@ -193,17 +278,17 @@ start_container_docker(profile_id, container_name, confirmation?)
 stop_container_docker(profile_id, container_name, confirmation?)
 restart_container_docker(profile_id, container_name, confirmation?)
 remove_container_docker(profile_id, container_name, confirmation?)
-inspect_compose_project_docker(profile_id, project_path, compose_file?)
-compose_ps_docker(profile_id, project_path, compose_file?)
-compose_logs_docker(profile_id, project_path, compose_file?, tail?)
-compose_up_docker(profile_id, project_path, compose_file?, dry_run?, confirmation?)
-compose_stop_docker(profile_id, project_path, compose_file?, confirmation?)
-compose_restart_docker(profile_id, project_path, compose_file?, confirmation?)
-compose_down_docker(profile_id, project_path, compose_file?, confirmation?)
-audit_compose_project_docker(profile_id, project_path, compose_file?)
-plan_compose_deployment_docker(profile_id, project_path, compose_file?)
-deploy_compose_project_docker(profile_id, project_path, compose_file?, dry_run?, confirmation?)
-remove_compose_project_docker(profile_id, project_path, compose_file?, confirmation?)
+inspect_compose_project_docker(profile_id, project_path, compose_file?, env_file?)
+compose_ps_docker(profile_id, project_path, compose_file?, env_file?)
+compose_logs_docker(profile_id, project_path, compose_file?, tail?, env_file?)
+compose_up_docker(profile_id, project_path, compose_file?, env_file?, dry_run?, confirmation?)
+compose_stop_docker(profile_id, project_path, compose_file?, env_file?, confirmation?)
+compose_restart_docker(profile_id, project_path, compose_file?, env_file?, confirmation?)
+compose_down_docker(profile_id, project_path, compose_file?, env_file?, confirmation?)
+audit_compose_project_docker(profile_id, project_path, compose_file?, env_file?)
+plan_compose_deployment_docker(profile_id, project_path, compose_file?, env_file?)
+deploy_compose_project_docker(profile_id, project_path, compose_file?, env_file?, dry_run?, confirmation?)
+remove_compose_project_docker(profile_id, project_path, compose_file?, env_file?, confirmation?)
 inspect_docker_project_docker(project_path, dockerfile?)
 build_image_docker(profile_id, project_path, image_name, ...)
 list_audit_events_docker(limit?)

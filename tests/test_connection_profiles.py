@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_connection_synsfuture.compose_read import ComposeReadService
 from mcp_connection_synsfuture.docker_write import DockerWriteService
 from mcp_connection_synsfuture.models import ConnectionState
 from mcp_connection_synsfuture.process import CommandResult
@@ -24,6 +25,30 @@ def profile_file(tmp_path: Path, content: str) -> Path:
     path = tmp_path / "profiles.toml"
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def test_compose_command_accepts_external_env_file(tmp_path: Path) -> None:
+    compose = tmp_path / "docker-compose.yml"
+    env_file = tmp_path / ".env"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    env_file.write_text("SECRET=not-returned\n", encoding="utf-8")
+
+    command = ComposeReadService._docker_command(
+        "windows-docker", compose, ["config", "--quiet"], str(env_file)
+    )
+
+    assert command == [
+        "docker",
+        "--context",
+        "windows-docker",
+        "compose",
+        "--env-file",
+        str(env_file.resolve()),
+        "-f",
+        str(compose),
+        "config",
+        "--quiet",
+    ]
 
 
 @pytest.mark.asyncio

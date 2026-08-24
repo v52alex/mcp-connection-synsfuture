@@ -19,6 +19,7 @@ class ComposeWriteService:
         operation: str,
         project_path: str,
         compose_file: str | None,
+        env_file: str | None,
         confirmation: str | None,
         dry_run: bool = False,
     ) -> ComposeMutationResult:
@@ -31,7 +32,14 @@ class ComposeWriteService:
         }
         if operation not in commands:
             raise ValueError("unsupported compose operation")
-        command = ["compose", "-f", str(path), *commands[operation]]
+        env_path = self._env_path(env_file)
+        command = [
+            "compose",
+            *(["--env-file", str(env_path)] if env_path else []),
+            "-f",
+            str(path),
+            *commands[operation],
+        ]
         confirmation_token = f"CONFIRM_COMPOSE_{operation.upper()}"
         preview = ["docker", "--context", "<profile-context>", *command]
         if dry_run or confirmation != confirmation_token:
@@ -47,7 +55,7 @@ class ComposeWriteService:
         return await self._execute(profile_id, operation, path, command, preview)
 
     async def audit(
-        self, profile_id: str, project_path: str, compose_file: str | None
+        self, profile_id: str, project_path: str, compose_file: str | None, env_file: str | None
     ) -> ComposeMutationResult:
         path = ComposeReadService._compose_path(project_path, compose_file)
         connection = await self._connections.connect(profile_id)
@@ -55,7 +63,15 @@ class ComposeWriteService:
             return self._result(
                 "audit", profile_id, path, "connection_failed", False, [], connection.message
             )
-        command = ["compose", "-f", str(path), "config", "--quiet"]
+        env_path = self._env_path(env_file)
+        command = [
+            "compose",
+            *(["--env-file", str(env_path)] if env_path else []),
+            "-f",
+            str(path),
+            "config",
+            "--quiet",
+        ]
         result = await self._runner.run(
             ["docker", "--context", connection.docker_context, *command], self._timeout
         )
@@ -130,3 +146,12 @@ class ComposeWriteService:
             message=message,
             documentation_hint=MCP_DOCUMENTATION_HINT,
         )
+
+    @staticmethod
+    def _env_path(env_file: str | None) -> Path | None:
+        if not env_file:
+            return None
+        path = Path(env_file).expanduser().resolve()
+        if not path.is_file():
+            raise ValueError("env_file must be an existing file")
+        return path

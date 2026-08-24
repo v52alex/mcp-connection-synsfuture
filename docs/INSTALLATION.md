@@ -54,6 +54,45 @@ Si falta configuración, el MCP devuelve un estado estructurado y una acción
 recomendada. Consulta [PROFILE_SETUP.md](PROFILE_SETUP.md) para preparar claves,
 aliases SSH y Docker contexts.
 
+## Prueba real contra Windows
+
+Si el Docker Engine remoto está en Windows y el contexto local se llama
+`windows-docker`, registra ese contexto en el MCP y úsalo como `profile_id`:
+
+```text
+mcp-connection-synsfuture.register_connection_profile(
+  profile_id="windows-docker",
+  docker_context="windows-docker",
+  ssh_profile="windows-docker",
+  capabilities=["read"]
+)
+
+mcp-connection-synsfuture.connect_connection_profile(
+  profile_id="windows-docker"
+)
+
+mcp-connection-synsfuture.list_containers_docker(
+  profile_id="windows-docker"
+)
+```
+
+El perfil enlaza tres identificadores locales: el `profile_id` que recibe el
+MCP, el nombre del Docker context y el alias SSH. El MCP valida el contexto y
+ejecuta las herramientas Docker mediante `docker --context windows-docker`.
+No es necesario proporcionar la IP o el usuario en cada llamada.
+
+Para confirmar la preparación fuera del MCP, sin cambiar el contexto Docker
+activo, puede usarse:
+
+```bash
+docker context inspect windows-docker
+docker --context windows-docker version
+docker --context windows-docker ps -a
+```
+
+Después de esta comprobación, las operaciones reales deben ejecutarse mediante
+las herramientas MCP y su `profile_id="windows-docker"`.
+
 ## Registrar un perfil mediante el MCP
 
 Cuando el perfil no exista, proporciona los datos al MCP; no es necesario editar
@@ -161,10 +200,13 @@ mcp-connection-synsfuture.inspect_compose_project_docker(
 
 mcp-connection-synsfuture.compose_ps_docker(
   profile_id="docker-remote1",
-  project_path="/ruta/al/proyecto"
+  project_path="/ruta/al/proyecto",
+  env_file="/ruta/segura/Project/.env"
 )
 ```
 
+`env_file` es opcional. Úsalo cuando el archivo de variables no esté junto al
+Compose; el MCP solo pasa la ruta a Docker y nunca lee ni devuelve su contenido.
 Los resultados no incluyen valores de entorno ni credenciales del proyecto.
 
 Las operaciones Compose mutables requieren confirmación explícita:

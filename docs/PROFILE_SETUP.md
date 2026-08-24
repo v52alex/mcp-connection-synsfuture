@@ -308,6 +308,25 @@ capabilities = ["read"]
 
 `profiles.toml` es local y está excluido de Git.
 
+### Perfil para el contexto Windows
+
+Si el contexto Docker remoto de Windows ya fue creado con el nombre
+`windows-docker`, el bloque autorizado debe quedar así:
+
+```toml
+[profiles.windows-docker]
+type = "docker-context"
+docker_context = "windows-docker"
+ssh_profile = "windows-docker"
+enabled = true
+capabilities = ["read"]
+```
+
+También puede registrarse directamente mediante la herramienta
+`register_connection_profile`; no es necesario editar el archivo manualmente.
+Una vez registrado, todas las herramientas Docker se invocan con
+`profile_id="windows-docker"`.
+
 ## 8. Probar mediante el cliente MCP
 
 ```bash

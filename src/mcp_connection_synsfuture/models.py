@@ -180,3 +180,62 @@ class AuditEventListResult(BaseModel):
     events: list[dict[str, Any]] = Field(default_factory=list)
     message: str
     documentation_hint: str
+
+
+class KindClusterSummary(BaseModel):
+    """Sanitized metadata for a remotely discovered Kind cluster."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    context: str
+    reachable: bool
+    selected: bool = False
+
+
+class KindClusterListResult(BaseModel):
+    """Clusters visible through one authorized connection profile."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    ssh_profile: str | None = None
+    connected: bool
+    clusters: list[KindClusterSummary] = Field(default_factory=list)
+    recommended_cluster: str | None = None
+    message: str
+    recommended_action: str | None = None
+    documentation_hint: str = "Más información: consulta la documentación del MCP."
+
+
+class KindClusterInspectResult(BaseModel):
+    """Read-only node and namespace information for a selected cluster."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    cluster: KindClusterSummary | None = None
+    connected: bool
+    namespace: str
+    node_count: int | None = Field(default=None, ge=0)
+    nodes_ready: int | None = Field(default=None, ge=0)
+    namespace_exists: bool = False
+    message: str
+    recommended_action: str | None = None
+    documentation_hint: str = "Más información: consulta la documentación del MCP."
+
+
+class KindImageLoadResult(BaseModel):
+    """Dry-run or execution result for loading an image into Kind."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    cluster_name: str
+    image_reference: str
+    state: str
+    executed: bool
+    command_preview: list[str] = Field(default_factory=list)
+    message: str
+    recommended_action: str | None = None
+    documentation_hint: str = "Más información: consulta la documentación del MCP."

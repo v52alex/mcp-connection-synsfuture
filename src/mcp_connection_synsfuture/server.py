@@ -11,6 +11,7 @@ from .compose_write import ComposeWriteService
 from .docker_build import DockerBuildService
 from .docker_read import DockerReadService
 from .docker_write import DockerWriteService
+from .kind import KindService
 from .models import (
     AuditEventListResult,
     ComposeMutationResult,
@@ -22,6 +23,9 @@ from .models import (
     DockerMutationResult,
     DockerProjectInspectionResult,
     DockerReadResult,
+    KindClusterInspectResult,
+    KindClusterListResult,
+    KindImageLoadResult,
     ProfileType,
 )
 from .process import ProcessRunner
@@ -42,7 +46,8 @@ mcp = MCPServer(
         "automatically; ask the user for the profile identifier when it is absent from "
         "the latest request. For real Codex requests, invoke the MCP tool directly and "
         "do not run client.py, docker CLI, or shell commands as a substitute; client.py "
-        "is only for local development tests."
+        "is only for local development tests. Kind/Kubernetes operations always begin "
+        "with list_kind_clusters and never select a cluster implicitly."
     ),
 )
 
@@ -99,6 +104,15 @@ def create_compose_write_service() -> ComposeWriteService:
 
 def create_docker_build_service() -> DockerBuildService:
     return DockerBuildService(ProcessRunner(), create_service())
+
+
+def create_kind_service() -> KindService:
+    connections = create_service()
+    return KindService(
+        ProcessRunner(),
+        ProfileRepository(connections.profiles_path),
+        connections,
+    )
 
 
 @mcp.tool(name="connect_connection_profile", annotations=READ_ONLY_EXTERNAL)
@@ -190,6 +204,37 @@ async def list_connection_profiles() -> ConnectionProfileListResult:
     """List sanitized metadata for locally authorized connection profiles."""
 
     return create_service().list_profiles()
+
+
+@mcp.tool(name="list_kind_clusters", annotations=READ_ONLY_EXTERNAL)
+async def list_kind_clusters(profile_id: str) -> KindClusterListResult:
+    """List remote Kind clusters and recommend an accessible cluster."""
+
+    return await create_kind_service().list_clusters(profile_id)
+
+
+@mcp.tool(name="inspect_kind_cluster", annotations=READ_ONLY_EXTERNAL)
+async def inspect_kind_cluster(
+    profile_id: str, cluster_name: str, namespace: str | None = None
+) -> KindClusterInspectResult:
+    """Inspect nodes and namespace for a cluster returned by list_kind_clusters."""
+
+    return await create_kind_service().inspect_cluster(profile_id, cluster_name, namespace)
+
+
+@mcp.tool(name="load_images_to_kind", annotations=REMOTE_MUTATION)
+async def load_images_to_kind(
+    profile_id: str,
+    cluster_name: str,
+    image_reference: str,
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> KindImageLoadResult:
+    """Plan or load a remote Docker image into a selected Kind cluster."""
+
+    return await create_kind_service().load_image(
+        profile_id, cluster_name, image_reference, dry_run, confirmation
+    )
 
 
 @mcp.tool(name="list_images_docker", annotations=READ_ONLY_EXTERNAL)
@@ -291,30 +336,33 @@ async def remove_container_docker(
 
 @mcp.tool(name="inspect_compose_project_docker", annotations=READ_ONLY_EXTERNAL)
 async def inspect_compose_project_docker(
-    profile_id: str, project_path: str, compose_file: str | None = None
+    profile_id: str, project_path: str, compose_file: str | None = None, env_file: str | None = None
 ) -> ComposeReadResult:
     """Inspect Compose service names without returning secret values."""
 
-    return await create_compose_read_service().inspect(profile_id, project_path, compose_file)
+    return await create_compose_read_service().inspect(
+        profile_id, project_path, compose_file, env_file
+    )
 
 
 @mcp.tool(name="compose_ps_docker", annotations=READ_ONLY_EXTERNAL)
 async def compose_ps_docker(
-    profile_id: str, project_path: str, compose_file: str | None = None
+    profile_id: str, project_path: str, compose_file: str | None = None, env_file: str | None = None
 ) -> ComposeReadResult:
     """List Compose runtime metadata through an authorized profile."""
 
-    return await create_compose_read_service().ps(profile_id, project_path, compose_file)
+    return await create_compose_read_service().ps(profile_id, project_path, compose_file, env_file)
 
 
 @mcp.tool(name="compose_logs_docker", annotations=READ_ONLY_EXTERNAL)
 async def compose_logs_docker(
-    profile_id: str, project_path: str, compose_file: str | None = None, tail: int = 100
+    profile_id: str, project_path: str, compose_file: str | None = None, tail: int = 100,
+    env_file: str | None = None
 ) -> ComposeReadResult:
     """Return bounded and redacted Compose logs as untrusted data."""
 
     return await create_compose_read_service().logs(
-        profile_id, project_path, compose_file, tail
+        profile_id, project_path, compose_file, tail, env_file
     )
 
 
@@ -323,13 +371,14 @@ async def compose_up_docker(
     profile_id: str,
     project_path: str,
     compose_file: str | None = None,
+    env_file: str | None = None,
     dry_run: bool = True,
     confirmation: str | None = None,
 ) -> ComposeMutationResult:
     """Plan or start a Compose project after explicit confirmation."""
 
     return await create_compose_write_service().operation(
-        profile_id, "up", project_path, compose_file, confirmation, dry_run
+        profile_id, "up", project_path, compose_file, env_file, confirmation, dry_run
     )
 
 
@@ -338,12 +387,13 @@ async def compose_stop_docker(
     profile_id: str,
     project_path: str,
     compose_file: str | None = None,
+    env_file: str | None = None,
     confirmation: str | None = None,
 ) -> ComposeMutationResult:
     """Stop a Compose project after explicit confirmation."""
 
     return await create_compose_write_service().operation(
-        profile_id, "stop", project_path, compose_file, confirmation
+        profile_id, "stop", project_path, compose_file, env_file, confirmation
     )
 
 
@@ -352,12 +402,13 @@ async def compose_restart_docker(
     profile_id: str,
     project_path: str,
     compose_file: str | None = None,
+    env_file: str | None = None,
     confirmation: str | None = None,
 ) -> ComposeMutationResult:
     """Restart a Compose project after explicit confirmation."""
 
     return await create_compose_write_service().operation(
-        profile_id, "restart", project_path, compose_file, confirmation
+        profile_id, "restart", project_path, compose_file, env_file, confirmation
     )
 
 
@@ -366,27 +417,30 @@ async def compose_down_docker(
     profile_id: str,
     project_path: str,
     compose_file: str | None = None,
+    env_file: str | None = None,
     confirmation: str | None = None,
 ) -> ComposeMutationResult:
     """Remove Compose containers and networks while preserving volumes."""
 
     return await create_compose_write_service().operation(
-        profile_id, "down", project_path, compose_file, confirmation
+        profile_id, "down", project_path, compose_file, env_file, confirmation
     )
 
 
 @mcp.tool(name="audit_compose_project_docker", annotations=READ_ONLY_EXTERNAL)
 async def audit_compose_project_docker(
-    profile_id: str, project_path: str, compose_file: str | None = None
+    profile_id: str, project_path: str, compose_file: str | None = None, env_file: str | None = None
 ) -> ComposeMutationResult:
     """Validate Compose configuration without mutation."""
 
-    return await create_compose_write_service().audit(profile_id, project_path, compose_file)
+    return await create_compose_write_service().audit(
+        profile_id, project_path, compose_file, env_file
+    )
 
 
 @mcp.tool(name="plan_compose_deployment_docker", annotations=READ_ONLY_EXTERNAL)
 async def plan_compose_deployment_docker(
-    profile_id: str, project_path: str, compose_file: str | None = None
+    profile_id: str, project_path: str, compose_file: str | None = None, env_file: str | None = None
 ) -> ComposeMutationResult:
     """Return a non-mutating Compose deployment plan."""
 
@@ -394,7 +448,7 @@ async def plan_compose_deployment_docker(
         profile_id,
         "up",
         project_path,
-        compose_file,
+        compose_file, env_file,
         confirmation=None,
         dry_run=True,
     )
@@ -405,6 +459,7 @@ async def deploy_compose_project_docker(
     profile_id: str,
     project_path: str,
     compose_file: str | None = None,
+    env_file: str | None = None,
     dry_run: bool = True,
     confirmation: str | None = None,
     health_wait_seconds: int | None = None,
@@ -413,7 +468,7 @@ async def deploy_compose_project_docker(
 
     del health_wait_seconds
     return await create_compose_write_service().operation(
-        profile_id, "up", project_path, compose_file, confirmation, dry_run
+        profile_id, "up", project_path, compose_file, env_file, confirmation, dry_run
     )
 
 
@@ -422,12 +477,13 @@ async def remove_compose_project_docker(
     profile_id: str,
     project_path: str,
     compose_file: str | None = None,
+    env_file: str | None = None,
     confirmation: str | None = None,
 ) -> ComposeMutationResult:
     """Remove a Compose project after explicit confirmation."""
 
     return await create_compose_write_service().operation(
-        profile_id, "down", project_path, compose_file, confirmation
+        profile_id, "down", project_path, compose_file, env_file, confirmation
     )
 
 
