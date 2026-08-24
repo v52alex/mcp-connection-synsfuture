@@ -7,13 +7,20 @@ from pathlib import Path
 
 from .docker_read import IMAGE_PATTERN
 from .models import ConnectionState, DockerBuildResult, DockerProjectInspectionResult
+from .profiles import ProfileRepository
 from .service import MCP_DOCUMENTATION_HINT, CommandRunner, ConnectionProfileService
 
 
 class DockerBuildService:
-    def __init__(self, runner: CommandRunner, connections: ConnectionProfileService):
+    def __init__(
+        self,
+        runner: CommandRunner,
+        connections: ConnectionProfileService,
+        profiles: ProfileRepository,
+    ):
         self._runner = runner
         self._connections = connections
+        self._profiles = profiles
         self._timeout = 900.0
 
     def inspect_project(self, project_path: str, dockerfile: str) -> DockerProjectInspectionResult:
@@ -102,21 +109,48 @@ class DockerBuildService:
                 preview,
                 connection.message,
             )
+        profile = self._profiles.get(profile_id)
+        if profile is None or not profile.ssh_profile:
+            return self._result(
+                profile_id,
+                "connection_failed",
+                False,
+                reference,
+                inspection.project_path,
+                preview,
+                "El perfil no tiene un alias SSH autorizado para el build remoto.",
+            )
         archive_path: Path | None = None
         try:
             archive_path = self._create_context_archive(project)
-            remote_command = [
-                "build",
-                "--tag",
-                reference,
-                "-",
-            ]
             context_bytes = archive_path.read_bytes()
+            remote_script = (
+                "$p=Join-Path $env:TEMP 'mcp-build-context.tar';"
+                "$i=[Console]::OpenStandardInput();"
+                "$o=[IO.File]::Open($p,[IO.FileMode]::Create);"
+                "$i.CopyTo($o);$o.Dispose();"
+                f"docker build --tag '{reference}' $p;"
+                "$c=$LASTEXITCODE;"
+                "Remove-Item -LiteralPath $p -Force;exit $c"
+            )
             result = await self._runner.run(
-                ["docker", "--context", connection.docker_context, *remote_command],
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=10",
+                    "-o",
+                    "PreferredAuthentications=publickey",
+                    profile.ssh_profile,
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    remote_script,
+                ],
                 self._timeout,
                 context_bytes,
-                {"DOCKER_BUILDKIT": "0"},
             )
         except TimeoutError:
             return self._result(

@@ -114,7 +114,10 @@ def create_compose_write_service() -> ComposeWriteService:
 
 
 def create_docker_build_service() -> DockerBuildService:
-    return DockerBuildService(ProcessRunner(), create_service())
+    connections = create_service()
+    return DockerBuildService(
+        ProcessRunner(), connections, ProfileRepository(connections.profiles_path)
+    )
 
 
 def create_kind_service() -> KindService:
