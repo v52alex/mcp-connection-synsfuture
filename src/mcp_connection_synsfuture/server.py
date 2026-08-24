@@ -49,7 +49,10 @@ mcp = MCPServer(
         "the latest request. For real Codex requests, invoke the MCP tool directly and "
         "do not run client.py, docker CLI, or shell commands as a substitute; client.py "
         "is only for local development tests. Kind/Kubernetes operations always begin "
-        "with list_kind_clusters and never select a cluster implicitly."
+        "with list_kind_clusters and never select a cluster implicitly. For a requested "
+        "cluster creation, if list_kind_clusters already reports the requested cluster "
+        "as reachable, stop and return that result; do not call create_kind_cluster. "
+        "Call create_kind_cluster only when the requested cluster is absent."
     ),
 )
 
@@ -222,7 +225,11 @@ async def create_kind_cluster(
     dry_run: bool = True,
     confirmation: str | None = None,
 ) -> KindClusterCreateResult:
-    """Plan or create a remote Kind cluster after explicit confirmation."""
+    """Plan or create a remote Kind cluster after explicit confirmation.
+
+    Callers must list clusters first and must not invoke this tool when the
+    requested cluster is already present and reachable.
+    """
 
     return await create_kind_service().create_cluster(
         profile_id, cluster_name, dry_run, confirmation
