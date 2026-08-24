@@ -943,9 +943,10 @@ class KindService:
         """Start a controlled Windows remote kubectl port-forward."""
 
         preview = [
+            "ssh", "<ssh-profile>", "-N", "-L", f"{local_port}:127.0.0.1:{remote_port}",
             "kubectl", "--context", f"kind-{cluster_name}", "--namespace", namespace,
-            "port-forward", f"service/{service_name}", f"{local_port}:{remote_port}",
-            "--address", "0.0.0.0",
+            "port-forward", f"service/{service_name}", f"{remote_port}:{remote_port}",
+            "--address", "127.0.0.1",
         ]
         base: dict[str, Any] = dict(
             profile_id=profile_id, cluster_name=cluster_name, namespace=namespace,
@@ -994,18 +995,16 @@ class KindService:
                 message="Port-forward planificado; no se abrió ningún proceso.",
                 recommended_action=f"Confirma con {PORT_FORWARD_CONFIRMATION} para ejecutar.",
             )
-        script = (
-            "$args=@('--context','kind-" + cluster_name + "','--namespace','" + namespace
-            + "','port-forward','service/" + service_name + "','" + str(local_port) + ":"
-            + str(remote_port) + "','--address','0.0.0.0');"
-            + "$p=Start-Process -FilePath 'kubectl' -ArgumentList $args -PassThru "
-            + "-WindowStyle Hidden;"
-            + "Write-Output $p.Id"
+        assert profile.ssh_profile is not None
+        ssh_command = (
+            "ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -N "
+            f"-L {local_port}:127.0.0.1:{remote_port} {profile.ssh_profile} "
+            f"kubectl --context kind-{cluster_name} --namespace {namespace} "
+            f"port-forward service/{service_name} {remote_port}:{remote_port} --address 127.0.0.1"
         )
+        script = f"nohup {ssh_command} >/tmp/mcp-kind-port-forward-{local_port}.log 2>&1 & echo $!"
         try:
-            result = await self._remote(
-                profile, "powershell", "-NoProfile", "-NonInteractive", "-Command", script
-            )
+            result = await self._runner.run(["sh", "-lc", script], 10.0)
         except (TimeoutError, OSError) as error:
             return KindPortForwardResult(
                 **base, state="execution_failed", executed=False,
@@ -1030,7 +1029,7 @@ class KindService:
             )
         return KindPortForwardResult(
             **base, state="started", executed=True, pid=pid,
-            endpoint=f"docker-remote1:{local_port}",
+            endpoint=f"127.0.0.1:{local_port}",
             message="Port-forward iniciado correctamente.",
             recommended_action=f"Cierra el proceso con stop_kind_port_forward(pid={pid}).",
         )
@@ -1062,11 +1061,9 @@ class KindService:
                 message="Cerrar el port-forward requiere confirmación explícita.",
                 recommended_action=f"Proporciona confirmation={STOP_PORT_FORWARD_CONFIRMATION}.",
             )
-        script = f"Stop-Process -Id {pid} -Force"
+        script = f"kill {pid}"
         try:
-            result = await self._remote(
-                profile, "powershell", "-NoProfile", "-NonInteractive", "-Command", script
-            )
+            result = await self._runner.run(["sh", "-lc", script], 10.0)
         except (TimeoutError, OSError) as error:
             return KindPortForwardResult(
                 **base, state="execution_failed", executed=False,
