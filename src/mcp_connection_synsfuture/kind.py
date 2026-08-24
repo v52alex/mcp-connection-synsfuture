@@ -56,7 +56,9 @@ class KindService:
             return self._list_failure(profile_id, "No se pudo iniciar la consulta remota de Kind.")
         if result.returncode != 0:
             return self._list_failure(
-                profile_id, "Kind no pudo listar los clusters del host remoto.", profile
+                profile_id,
+                self._kind_error_message(result.stderr),
+                profile,
             )
 
         clusters: list[KindClusterSummary] = []
@@ -338,6 +340,22 @@ class KindService:
             recommended_action="Valida el perfil y las herramientas kind/kubectl del host remoto.",
             documentation_hint=MCP_DOCUMENTATION_HINT,
         )
+
+    @staticmethod
+    def _kind_error_message(stderr: str) -> str:
+        """Classify common remote failures without returning raw command output."""
+
+        normalized = stderr.lower()
+        if "command not found" in normalized or "not recognized" in normalized:
+            return (
+                "El comando kind no está instalado o no está disponible en PATH "
+                "en el host remoto."
+            )
+        if "permission denied" in normalized or "publickey" in normalized:
+            return "El host remoto rechazó la autenticación SSH para consultar Kind."
+        if "cannot connect" in normalized or "docker daemon" in normalized:
+            return "Kind está instalado, pero no puede acceder al runtime Docker remoto."
+        return "Kind no pudo listar los clusters del host remoto; el comando devolvió un error."
 
     @staticmethod
     def _load_failure(
