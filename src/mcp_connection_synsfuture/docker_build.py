@@ -117,7 +117,7 @@ class DockerBuildService:
         message = (
             "Imagen construida correctamente."
             if result.returncode == 0
-            else "Docker rechazó el build."
+            else self._classify_build_failure(result.stderr)
         )
         return self._result(
             profile_id,
@@ -128,6 +128,27 @@ class DockerBuildService:
             preview,
             message,
         )
+
+    @staticmethod
+    def _classify_build_failure(stderr: str) -> str:
+        """Return a bounded, non-sensitive build failure diagnosis."""
+
+        normalized = stderr.lower()
+        if "unable to prepare context" in normalized or (
+            "context" in normalized and "not found" in normalized
+        ):
+            return "Docker no pudo preparar el contexto local para el daemon remoto."
+        if "dockerfile" in normalized and (
+            "not found" in normalized or "no such file" in normalized
+        ):
+            return "Docker no pudo encontrar el Dockerfile en el contexto enviado."
+        if "permission denied" in normalized or "access is denied" in normalized:
+            return "Docker rechazó el acceso al contexto o al daemon remoto."
+        if "maven" in normalized or "could not transfer artifact" in normalized:
+            return "El build falló al resolver o compilar dependencias Maven."
+        if "failed to solve" in normalized:
+            return "El builder de Docker no pudo resolver una etapa del Dockerfile."
+        return "Docker rechazó el build; el diagnóstico remoto no fue concluyente."
 
     @staticmethod
     def _result(
