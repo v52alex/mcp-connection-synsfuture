@@ -6,12 +6,7 @@ import tempfile
 from pathlib import Path
 
 from .docker_read import IMAGE_PATTERN
-from .models import (
-    ConnectionState,
-    DockerBuildResult,
-    DockerProjectInspectionResult,
-    RemotePlatform,
-)
+from .models import ConnectionState, DockerBuildResult, DockerProjectInspectionResult
 from .profiles import ProfileRepository
 from .service import MCP_DOCUMENTATION_HINT, CommandRunner, ConnectionProfileService
 
@@ -115,7 +110,7 @@ class DockerBuildService:
                 connection.message,
             )
         profile = self._profiles.get(profile_id)
-        if profile is None or not profile.ssh_profile:
+        if profile is None:
             return self._result(
                 profile_id,
                 "connection_failed",
@@ -123,50 +118,22 @@ class DockerBuildService:
                 reference,
                 inspection.project_path,
                 preview,
-                "El perfil no tiene un alias SSH autorizado para el build remoto.",
+                "El perfil autorizado no está disponible para el build.",
             )
+        assert profile.docker_context is not None
         archive_path: Path | None = None
         try:
             archive_path = self._create_context_archive(project)
             context_bytes = archive_path.read_bytes()
-            if profile.remote_platform is RemotePlatform.WINDOWS:
-                remote_script = (
-                    "$p=Join-Path $env:TEMP 'mcp-build-context.tar';"
-                    f"$d='{profile.docker_command}';"
-                    "if ($d -eq 'docker' -and -not (Get-Command $d -ErrorAction SilentlyContinue)) "
-                    "{ Write-Error 'MCP_DOCKER_NOT_FOUND'; exit 127 };"
-                    "if ($d -ne 'docker' -and -not (Test-Path -LiteralPath $d)) "
-                    "{ Write-Error 'MCP_DOCKER_COMMAND_NOT_FOUND'; exit 127 };"
-                    "$i=[Console]::OpenStandardInput();"
-                    "$o=[IO.File]::Open($p,[IO.FileMode]::Create);"
-                    "$i.CopyTo($o);$o.Dispose();"
-                    f"$cargs='{profile.docker_command} build --tag {reference} - < \"'+$p+'\"';"
-                    "cmd.exe /c $cargs;"
-                    "$c=$LASTEXITCODE;"
-                    "Remove-Item -LiteralPath $p -Force;exit $c"
-                )
-                remote_command = [
-                    "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", remote_script
-                ]
-            else:
-                remote_script = (
-                    "p=$(mktemp /tmp/mcp-build-context.XXXXXX.tar);"
-                    "cat >\"$p\";"
-                    f"{profile.docker_command} build --tag {reference} - <\"$p\";"
-                    "c=$?;rm -f \"$p\";exit $c"
-                )
-                remote_command = ["sh", "-c", remote_script]
             result = await self._runner.run(
                 [
-                    "ssh",
-                    "-o",
-                    "BatchMode=yes",
-                    "-o",
-                    "ConnectTimeout=10",
-                    "-o",
-                    "PreferredAuthentications=publickey",
-                    profile.ssh_profile,
-                    *remote_command,
+                    "docker",
+                    "--context",
+                    profile.docker_context,
+                    "build",
+                    "--tag",
+                    reference,
+                    "-",
                 ],
                 self._timeout,
                 context_bytes,
@@ -237,14 +204,6 @@ class DockerBuildService:
         """Return a bounded, non-sensitive build failure diagnosis."""
 
         normalized = stderr.lower()
-        if "mcp_docker_not_found" in normalized:
-            return "El comando Docker no está disponible en el PATH del host remoto."
-        if "mcp_docker_command_not_found" in normalized:
-            return "El ejecutable Docker configurado no existe en el host remoto."
-        if "powershell.exe" in normalized and "not found" in normalized:
-            return "PowerShell no está disponible en el host remoto."
-        if "cmd.exe" in normalized and "not found" in normalized:
-            return "cmd.exe no está disponible en el host remoto."
         if "unable to prepare context" in normalized or (
             "context" in normalized and "not found" in normalized
         ):
