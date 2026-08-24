@@ -1,6 +1,7 @@
 """Small async process boundary for fixed, non-shell commands."""
 
 import asyncio
+import os
 from dataclasses import dataclass
 
 
@@ -17,6 +18,7 @@ class ProcessRunner:
         args: list[str],
         timeout_seconds: float,
         input_data: bytes | None = None,
+        environment: dict[str, str] | None = None,
     ) -> CommandResult:
         """Run fixed arguments without invoking a shell."""
 
@@ -24,6 +26,7 @@ class ProcessRunner:
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, **environment} if environment else None,
         )
         try:
             stdout, stderr = await asyncio.wait_for(

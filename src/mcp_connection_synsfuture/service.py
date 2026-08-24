@@ -29,6 +29,7 @@ class CommandRunner(Protocol):
         args: list[str],
         timeout_seconds: float,
         input_data: bytes | None = None,
+        environment: dict[str, str] | None = None,
     ) -> CommandResult: ...
 
 

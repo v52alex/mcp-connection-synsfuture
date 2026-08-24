@@ -123,6 +123,7 @@ class DockerBuildService:
                 ["docker", "--context", connection.docker_context, *remote_command],
                 self._timeout,
                 context_bytes,
+                {"DOCKER_BUILDKIT": "0"},
             )
         except TimeoutError:
             return self._result(
