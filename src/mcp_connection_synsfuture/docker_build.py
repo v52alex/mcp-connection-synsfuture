@@ -129,7 +129,7 @@ class DockerBuildService:
                 "$i=[Console]::OpenStandardInput();"
                 "$o=[IO.File]::Open($p,[IO.FileMode]::Create);"
                 "$i.CopyTo($o);$o.Dispose();"
-                f"docker build --tag '{reference}' $p;"
+                f"docker --context desktop-linux build --tag '{reference}' $p;"
                 "$c=$LASTEXITCODE;"
                 "Remove-Item -LiteralPath $p -Force;exit $c"
             )
