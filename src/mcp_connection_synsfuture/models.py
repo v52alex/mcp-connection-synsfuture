@@ -239,3 +239,19 @@ class KindImageLoadResult(BaseModel):
     message: str
     recommended_action: str | None = None
     documentation_hint: str = "Más información: consulta la documentación del MCP."
+
+
+class KindPrerequisitesResult(BaseModel):
+    """Availability checks for the fixed Kind remote toolchain."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    ssh_profile: str | None = None
+    connected: bool
+    kind_available: bool = False
+    kubectl_available: bool = False
+    docker_available: bool = False
+    message: str
+    recommended_action: str | None = None
+    documentation_hint: str = "Más información: consulta la documentación del MCP."

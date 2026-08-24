@@ -26,6 +26,7 @@ from .models import (
     KindClusterInspectResult,
     KindClusterListResult,
     KindImageLoadResult,
+    KindPrerequisitesResult,
     ProfileType,
 )
 from .process import ProcessRunner
@@ -211,6 +212,13 @@ async def list_kind_clusters(profile_id: str) -> KindClusterListResult:
     """List remote Kind clusters and recommend an accessible cluster."""
 
     return await create_kind_service().list_clusters(profile_id)
+
+
+@mcp.tool(name="check_kind_prerequisites", annotations=READ_ONLY_EXTERNAL)
+async def check_kind_prerequisites(profile_id: str) -> KindPrerequisitesResult:
+    """Check kind, kubectl and Docker availability on the remote host."""
+
+    return await create_kind_service().check_prerequisites(profile_id)
 
 
 @mcp.tool(name="inspect_kind_cluster", annotations=READ_ONLY_EXTERNAL)

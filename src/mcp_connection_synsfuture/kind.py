@@ -12,6 +12,7 @@ from .models import (
     KindClusterListResult,
     KindClusterSummary,
     KindImageLoadResult,
+    KindPrerequisitesResult,
 )
 from .process import CommandResult
 from .profiles import ProfileRepository
@@ -44,6 +45,55 @@ class KindService:
             "MCP_CONNECTION_KIND_RECOMMENDED_CLUSTER", "microservices"
         )
         self._namespace = os.getenv("MCP_CONNECTION_KUBERNETES_NAMESPACE", "microservices")
+
+    async def check_prerequisites(self, profile_id: str) -> KindPrerequisitesResult:
+        """Check fixed remote binaries without returning their raw output."""
+
+        profile, error = await self._authorized_profile(profile_id)
+        if error is not None or profile is None:
+            return KindPrerequisitesResult(
+                profile_id=profile_id,
+                connected=False,
+                message=error or "Perfil no disponible.",
+                recommended_action="Valida el perfil autorizado antes de consultar el host remoto.",
+            )
+        checks: list[tuple[str, tuple[str, ...]]] = [
+            ("kind", ("kind", "version")),
+            ("kubectl", ("kubectl", "version", "--client")),
+            ("docker", ("docker", "info")),
+        ]
+        availability: dict[str, bool] = {}
+        try:
+            for name, command in checks:
+                result = await self._remote(profile, *command)
+                availability[name] = result.returncode == 0
+        except (FileNotFoundError, TimeoutError):
+            return KindPrerequisitesResult(
+                profile_id=profile_id,
+                ssh_profile=profile.ssh_profile,
+                connected=False,
+                message="No se pudo ejecutar la validación remota de prerrequisitos.",
+                recommended_action="Verifica OpenSSH y el host remoto.",
+            )
+        missing = [name for name, available in availability.items() if not available]
+        return KindPrerequisitesResult(
+            profile_id=profile_id,
+            ssh_profile=profile.ssh_profile,
+            connected=True,
+            kind_available=availability["kind"],
+            kubectl_available=availability["kubectl"],
+            docker_available=availability["docker"],
+            message=(
+                "Los prerrequisitos remotos están disponibles."
+                if not missing
+                else f"Faltan o fallan prerrequisitos remotos: {', '.join(missing)}."
+            ),
+            recommended_action=(
+                None
+                if not missing
+                else "Instala o corrige los prerrequisitos indicados en el host remoto."
+            ),
+        )
 
     async def list_clusters(self, profile_id: str) -> KindClusterListResult:
         profile, error = await self._authorized_profile(profile_id)
