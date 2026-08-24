@@ -24,7 +24,12 @@ MCP_DOCUMENTATION_HINT = "Más información: consulta la documentación del MCP.
 
 
 class CommandRunner(Protocol):
-    async def run(self, args: list[str], timeout_seconds: float) -> CommandResult: ...
+    async def run(
+        self,
+        args: list[str],
+        timeout_seconds: float,
+        input_data: bytes | None = None,
+    ) -> CommandResult: ...
 
 
 class ConnectionProfileService:

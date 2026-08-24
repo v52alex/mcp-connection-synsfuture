@@ -116,11 +116,13 @@ class DockerBuildService:
                 dockerfile_relative,
                 "--tag",
                 reference,
-                str(archive_path),
+                "-",
             ]
+            context_bytes = archive_path.read_bytes()
             result = await self._runner.run(
                 ["docker", "--context", connection.docker_context, *remote_command],
                 self._timeout,
+                context_bytes,
             )
         except TimeoutError:
             return self._result(
