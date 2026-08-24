@@ -677,6 +677,10 @@ class KindService:
             profile, "kubectl", "--context", f"kind-{cluster_name}", "get",
             "service", workload_name, "--namespace", namespace, "-o", "json",
         )
+        events = await self._remote(
+            profile, "kubectl", "--context", f"kind-{cluster_name}", "get", "events",
+            "--namespace", namespace, "--sort-by=.lastTimestamp", "-o", "json",
+        )
         if deployment.returncode != 0:
             return KindWorkloadInspectResult.model_validate(
                 {**base, "connected": True,
@@ -710,11 +714,23 @@ class KindService:
                 "cluster_ip": service_data.get("spec", {}).get("clusterIP"),
                 "ports": service_data.get("spec", {}).get("ports", []),
             })
+        event_items = self._parse_json(events.stdout).get("items", [])
+        event_records = [
+            {
+                "type": item.get("type"),
+                "reason": item.get("reason"),
+                "message": item.get("message"),
+                "object": item.get("involvedObject", {}).get("name"),
+                "count": item.get("count"),
+            }
+            for item in event_items[-10:] if isinstance(item, dict)
+        ]
         ready = int(status.get("readyReplicas", 0) or 0)
         desired = int(status.get("replicas", 0) or 0)
         return KindWorkloadInspectResult(
             **base, connected=True, deployment_ready=ready, deployment_desired=desired,
             pod_records=pod_records, service_records=service_records,
+            event_records=event_records,
             message=("Workload listo." if ready >= desired and desired > 0
                      else "Workload creado, pero aún no está listo."),
             recommended_action=(None if ready >= desired and desired > 0

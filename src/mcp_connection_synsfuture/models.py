@@ -286,6 +286,7 @@ class KindWorkloadInspectResult(BaseModel):
     deployment_desired: int = 0
     pod_records: list[dict[str, Any]] = Field(default_factory=list)
     service_records: list[dict[str, Any]] = Field(default_factory=list)
+    event_records: list[dict[str, Any]] = Field(default_factory=list)
     message: str
     recommended_action: str | None = None
     documentation_hint: str = "Más información: consulta la documentación del MCP."
