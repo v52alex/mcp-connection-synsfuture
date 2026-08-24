@@ -5,7 +5,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from .models import (
     ConnectionProfile,
@@ -18,6 +18,7 @@ from .models import (
     KindManifestApplyResult,
     KindNamespaceEnsureResult,
     KindPrerequisitesResult,
+    KindWorkloadInspectResult,
     RemotePlatform,
 )
 from .process import CommandResult
@@ -630,6 +631,100 @@ class KindService:
                  None if success else "Revisa el diagnóstico y el namespace remoto."
              )}
         )
+
+    async def inspect_workload(
+        self,
+        profile_id: str,
+        cluster_name: str,
+        workload_name: str,
+        namespace: str,
+    ) -> KindWorkloadInspectResult:
+        base = dict(
+            profile_id=profile_id,
+            cluster_name=cluster_name,
+            namespace=namespace,
+            workload_name=workload_name,
+        )
+        if not all(
+            _SAFE_NAME.fullmatch(value)
+            for value in (cluster_name, workload_name, namespace)
+        ):
+            return KindWorkloadInspectResult.model_validate(
+                {**base, "connected": False,
+                 "message": "El cluster, workload o namespace no cumple el formato permitido."}
+            )
+        listed = await self.list_clusters(profile_id)
+        cluster = next((item for item in listed.clusters if item.name == cluster_name), None)
+        profile = self._profiles.get(profile_id)
+        if (
+            cluster is None
+            or not cluster.reachable
+            or profile is None
+            or profile.ssh_profile is None
+        ):
+            return KindWorkloadInspectResult.model_validate(
+                {**base, "connected": False, "message": "El cluster o perfil no está disponible."}
+            )
+        deployment = await self._remote(
+            profile, "kubectl", "--context", f"kind-{cluster_name}", "get",
+            "deployment", workload_name, "--namespace", namespace, "-o", "json",
+        )
+        pods = await self._remote(
+            profile, "kubectl", "--context", f"kind-{cluster_name}", "get",
+            "pods", "--namespace", namespace, "-l", f"app={workload_name}", "-o", "json",
+        )
+        service = await self._remote(
+            profile, "kubectl", "--context", f"kind-{cluster_name}", "get",
+            "service", workload_name, "--namespace", namespace, "-o", "json",
+        )
+        if deployment.returncode != 0:
+            return KindWorkloadInspectResult.model_validate(
+                {**base, "connected": True,
+                 "message": "El Deployment no existe o kubectl no pudo consultarlo.",
+                 "recommended_action": (
+                     "Revisa el manifiesto aplicado y los eventos del namespace."
+                 )}
+            )
+        deployment_data = self._parse_json(deployment.stdout)
+        pods_data = self._parse_json(pods.stdout)
+        service_data = self._parse_json(service.stdout)
+        status = deployment_data.get("status", {}) if isinstance(deployment_data, dict) else {}
+        pod_items = pods_data.get("items", []) if isinstance(pods_data, dict) else []
+        pod_records = [
+            {"name": item.get("metadata", {}).get("name"),
+             "phase": item.get("status", {}).get("phase"),
+             "ready": any(
+                 condition.get("type") == "Ready" and condition.get("status") == "True"
+                 for condition in item.get("status", {}).get("conditions", [])
+             )}
+            for item in pod_items if isinstance(item, dict)
+        ]
+        service_records = []
+        if isinstance(service_data, dict) and service_data.get("metadata"):
+            service_records.append({
+                "name": service_data.get("metadata", {}).get("name"),
+                "type": service_data.get("spec", {}).get("type"),
+                "cluster_ip": service_data.get("spec", {}).get("clusterIP"),
+                "ports": service_data.get("spec", {}).get("ports", []),
+            })
+        ready = int(status.get("readyReplicas", 0) or 0)
+        desired = int(status.get("replicas", 0) or 0)
+        return KindWorkloadInspectResult(
+            **base, connected=True, deployment_ready=ready, deployment_desired=desired,
+            pod_records=pod_records, service_records=service_records,
+            message=("Workload listo." if ready >= desired and desired > 0
+                     else "Workload creado, pero aún no está listo."),
+            recommended_action=(None if ready >= desired and desired > 0
+                                else "Revisa los pods y eventos del workload."),
+        )
+
+    @staticmethod
+    def _parse_json(raw: str) -> dict[str, Any]:
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return value if isinstance(value, dict) else {}
 
     async def ensure_namespace(
         self,

@@ -272,6 +272,25 @@ class KindManifestApplyResult(BaseModel):
     documentation_hint: str = "Más información: consulta la documentación del MCP."
 
 
+class KindWorkloadInspectResult(BaseModel):
+    """Read-only workload status from a selected Kind cluster."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    cluster_name: str
+    namespace: str
+    workload_name: str
+    connected: bool
+    deployment_ready: int = 0
+    deployment_desired: int = 0
+    pod_records: list[dict[str, Any]] = Field(default_factory=list)
+    service_records: list[dict[str, Any]] = Field(default_factory=list)
+    message: str
+    recommended_action: str | None = None
+    documentation_hint: str = "Más información: consulta la documentación del MCP."
+
+
 class KindPrerequisitesResult(BaseModel):
     """Availability checks for the fixed Kind remote toolchain."""
 

@@ -31,6 +31,7 @@ from .models import (
     KindManifestApplyResult,
     KindNamespaceEnsureResult,
     KindPrerequisitesResult,
+    KindWorkloadInspectResult,
     ProfileType,
     RemotePlatform,
 )
@@ -320,6 +321,20 @@ async def apply_kind_manifest(
 
     return await create_kind_service().apply_manifest(
         profile_id, cluster_name, manifest_path, namespace, dry_run, confirmation
+    )
+
+
+@mcp.tool(name="inspect_kind_workload", annotations=READ_ONLY_EXTERNAL)
+async def inspect_kind_workload(
+    profile_id: str,
+    cluster_name: str,
+    workload_name: str,
+    namespace: str = "microservices",
+) -> KindWorkloadInspectResult:
+    """Inspect Deployment, pods and Service status without modifying the cluster."""
+
+    return await create_kind_service().inspect_workload(
+        profile_id, cluster_name, workload_name, namespace
     )
 
 
