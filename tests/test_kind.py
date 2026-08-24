@@ -156,6 +156,43 @@ async def test_port_forward_rejects_unsafe_port(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_pod_logs_are_bounded_and_redacted(tmp_path: Path) -> None:
+    runner = StubRunner(
+        [
+            CommandResult(0, "microservices\n", ""),
+            CommandResult(0, "node Ready\n", ""),
+            CommandResult(
+                0,
+                "started password=super-secret\nAuthorization: Bearer abc123\nready\n",
+                "",
+            ),
+        ]
+    )
+    service = KindService(runner, profiles(tmp_path), FakeConnections())
+
+    result = await service.pod_logs(
+        "docker-remote1", "microservices", "api-gateway-pod", "microservices", 50
+    )
+
+    assert result.connected is True
+    assert result.message == "Logs obtenidos correctamente."
+    assert "password=[REDACTED]" in result.lines[0]
+    assert "Bearer [REDACTED]" in result.lines[1]
+    assert "super-secret" not in "\n".join(result.lines)
+
+
+@pytest.mark.asyncio
+async def test_pod_logs_rejects_unsafe_name(tmp_path: Path) -> None:
+    service = KindService(StubRunner([]), profiles(tmp_path), FakeConnections())
+
+    result = await service.pod_logs(
+        "docker-remote1", "microservices", "api-gateway;rm", "microservices"
+    )
+
+    assert result.connected is False
+
+
+@pytest.mark.asyncio
 async def test_checks_docker_through_authorized_context(tmp_path: Path) -> None:
     runner = StubRunner(
         [

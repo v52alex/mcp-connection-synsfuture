@@ -31,6 +31,7 @@ from .models import (
     KindImageLoadResult,
     KindManifestApplyResult,
     KindNamespaceEnsureResult,
+    KindPodLogsResult,
     KindPortForwardResult,
     KindPrerequisitesResult,
     KindWorkloadInspectResult,
@@ -381,6 +382,21 @@ async def inspect_kind_workload(
 
     return await create_kind_service().inspect_workload(
         profile_id, cluster_name, workload_name, namespace
+    )
+
+
+@mcp.tool(name="inspect_kind_pod_logs", annotations=READ_ONLY_EXTERNAL)
+async def inspect_kind_pod_logs(
+    profile_id: str,
+    cluster_name: str,
+    pod_name: str,
+    namespace: str = "microservices",
+    tail: int = 200,
+) -> KindPodLogsResult:
+    """Read a bounded, redacted log tail from a pod through the authorized Kind profile."""
+
+    return await create_kind_service().pod_logs(
+        profile_id, cluster_name, pod_name, namespace, tail
     )
 
 

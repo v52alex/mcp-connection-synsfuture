@@ -19,6 +19,7 @@ from .models import (
     KindImageLoadResult,
     KindManifestApplyResult,
     KindNamespaceEnsureResult,
+    KindPodLogsResult,
     KindPortForwardResult,
     KindPrerequisitesResult,
     KindWorkloadInspectResult,
@@ -745,6 +746,59 @@ class KindService:
                                 else "Revisa los pods y eventos del workload."),
         )
 
+    async def pod_logs(
+        self,
+        profile_id: str,
+        cluster_name: str,
+        pod_name: str,
+        namespace: str,
+        tail: int = 200,
+    ) -> KindPodLogsResult:
+        """Read a bounded, redacted log tail through the authorized profile."""
+        base: dict[str, Any] = dict(
+            profile_id=profile_id, cluster_name=cluster_name,
+            namespace=namespace, pod_name=pod_name,
+        )
+        if (not all(_SAFE_NAME.fullmatch(value) for value in
+                    (cluster_name, namespace, pod_name)) or
+                not isinstance(tail, int) or not 1 <= tail <= 500):
+            return KindPodLogsResult(
+                **base, connected=False,
+                message="El cluster, pod, namespace o tail no cumple el formato permitido.",
+            )
+        profile, error = await self._authorized_profile(profile_id)
+        if error is not None or profile is None:
+            return KindPodLogsResult(
+                **base, connected=False, message=error or "Perfil no disponible.",
+            )
+        listed = await self.list_clusters(profile_id)
+        cluster = next((item for item in listed.clusters if item.name == cluster_name), None)
+        if cluster is None or not cluster.reachable:
+            return KindPodLogsResult(
+                **base, connected=False,
+                message="El clúster solicitado no existe o no es alcanzable.",
+            )
+        try:
+            result = await self._remote(
+                profile, "kubectl", "--context", f"kind-{cluster_name}",
+                "--namespace", namespace, "logs", pod_name, "--tail", str(tail),
+            )
+        except (FileNotFoundError, TimeoutError):
+            return KindPodLogsResult(
+                **base, connected=True, message="No se pudieron obtener los logs del pod.",
+            )
+        if result.returncode != 0:
+            return KindPodLogsResult(
+                **base, connected=True,
+                message="kubectl no pudo obtener los logs del pod.",
+                diagnostic=self._sanitize_diagnostic(result.stderr or result.stdout),
+            )
+        return KindPodLogsResult(
+            **base, connected=True,
+            lines=[self._redact_log_line(line) for line in result.stdout.splitlines()],
+            message="Logs obtenidos correctamente.",
+        )
+
     async def apply_secret_from_env(
         self,
         profile_id: str,
@@ -1291,6 +1345,21 @@ class KindService:
     def _sanitize_diagnostic(output: str) -> str | None:
         lines = [line.strip() for line in output.splitlines() if line.strip()]
         return " | ".join(lines[-3:])[:800] if lines else None
+
+    @staticmethod
+    def _redact_log_line(line: str) -> str:
+        redacted = re.sub(
+            r"(?i)(\bauthorization\s*[:=]\s*)(?:Bearer\s+)?\S+",
+            r"\1Bearer [REDACTED]",
+            line,
+        )
+        redacted = re.sub(r"(?i)\bBearer\s+\S+", "Bearer [REDACTED]", redacted)
+        redacted = re.sub(
+            r"(?i)\b(password|secret|token|jwt)(\s*[:=]\s*)\S+",
+            r"\1\2[REDACTED]",
+            redacted,
+        )
+        return redacted
 
     @staticmethod
     def _load_failure(

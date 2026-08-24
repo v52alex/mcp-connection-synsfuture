@@ -378,3 +378,19 @@ class KindPortForwardResult(BaseModel):
     diagnostic: str | None = None
     recommended_action: str | None = None
     documentation_hint: str = "Más información: consulta la documentación del MCP."
+
+
+class KindPodLogsResult(BaseModel):
+    """Bounded, redacted logs from a selected Kind pod."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    cluster_name: str
+    namespace: str
+    pod_name: str
+    connected: bool
+    lines: list[str] = Field(default_factory=list)
+    message: str
+    diagnostic: str | None = None
+    documentation_hint: str = "Más información: consulta la documentación del MCP."
