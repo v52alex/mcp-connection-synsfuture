@@ -125,6 +125,37 @@ async def test_prometheus_helm_release_is_dry_run_by_default(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+async def test_port_forward_is_dry_run_by_default(tmp_path: Path) -> None:
+    runner = StubRunner(
+        [
+            CommandResult(0, "microservices\n", ""),
+            CommandResult(0, "node Ready\n", ""),
+        ]
+    )
+    service = KindService(runner, profiles(tmp_path), FakeConnections())
+
+    result = await service.start_port_forward(
+        "docker-remote1", "microservices", "api-gateway", "microservices", 18080, 8080
+    )
+
+    assert result.state == "planned"
+    assert result.executed is False
+    assert "START_KIND_PORT_FORWARD_ON_DOCKER_REMOTE" in (result.recommended_action or "")
+
+
+@pytest.mark.asyncio
+async def test_port_forward_rejects_unsafe_port(tmp_path: Path) -> None:
+    service = KindService(StubRunner([]), profiles(tmp_path), FakeConnections())
+
+    result = await service.start_port_forward(
+        "docker-remote1", "microservices", "api-gateway", "microservices", 80, 8080
+    )
+
+    assert result.state == "validation_failed"
+    assert result.executed is False
+
+
+@pytest.mark.asyncio
 async def test_checks_docker_through_authorized_context(tmp_path: Path) -> None:
     runner = StubRunner(
         [

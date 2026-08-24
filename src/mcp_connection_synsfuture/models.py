@@ -356,3 +356,25 @@ class KindHelmReleaseResult(BaseModel):
     diagnostic: str | None = None
     recommended_action: str | None = None
     documentation_hint: str = "Más información: consulta la documentación del MCP."
+
+
+class KindPortForwardResult(BaseModel):
+    """Controlled remote port-forward lifecycle result."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    cluster_name: str
+    namespace: str
+    service_name: str
+    local_port: int
+    remote_port: int
+    state: str
+    executed: bool
+    pid: int | None = None
+    endpoint: str | None = None
+    command_preview: list[str] = Field(default_factory=list)
+    message: str
+    diagnostic: str | None = None
+    recommended_action: str | None = None
+    documentation_hint: str = "Más información: consulta la documentación del MCP."

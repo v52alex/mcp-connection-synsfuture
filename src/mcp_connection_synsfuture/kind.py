@@ -19,6 +19,7 @@ from .models import (
     KindImageLoadResult,
     KindManifestApplyResult,
     KindNamespaceEnsureResult,
+    KindPortForwardResult,
     KindPrerequisitesResult,
     KindWorkloadInspectResult,
     RemotePlatform,
@@ -33,6 +34,8 @@ LOAD_IMAGES_CONFIRMATION = "LOAD_IMAGES_TO_KIND_ON_WINDOWS_DOCKER"
 CREATE_CLUSTER_CONFIRMATION = "CREATE_KIND_CLUSTER_ON_DOCKER_REMOTE"
 ENSURE_NAMESPACE_CONFIRMATION = "ENSURE_KIND_NAMESPACE_ON_DOCKER_REMOTE"
 HELM_RELEASE_CONFIRMATION = "INSTALL_HELM_RELEASE_ON_DOCKER_REMOTE"
+PORT_FORWARD_CONFIRMATION = "START_KIND_PORT_FORWARD_ON_DOCKER_REMOTE"
+STOP_PORT_FORWARD_CONFIRMATION = "STOP_KIND_PORT_FORWARD_ON_DOCKER_REMOTE"
 PROMETHEUS_STACK_CHART = "prometheus-community/kube-prometheus-stack"
 PROMETHEUS_STACK_REPO = "https://prometheus-community.github.io/helm-charts"
 
@@ -924,6 +927,161 @@ class KindService:
         return KindHelmReleaseResult(
             **base, state="installed", executed=True,
             message="Release Helm instalado correctamente.",
+        )
+
+    async def start_port_forward(
+        self,
+        profile_id: str,
+        cluster_name: str,
+        service_name: str,
+        namespace: str,
+        local_port: int,
+        remote_port: int,
+        dry_run: bool = True,
+        confirmation: str | None = None,
+    ) -> KindPortForwardResult:
+        """Start a controlled Windows remote kubectl port-forward."""
+
+        preview = [
+            "kubectl", "--context", f"kind-{cluster_name}", "--namespace", namespace,
+            "port-forward", f"service/{service_name}", f"{local_port}:{remote_port}",
+            "--address", "0.0.0.0",
+        ]
+        base: dict[str, Any] = dict(
+            profile_id=profile_id, cluster_name=cluster_name, namespace=namespace,
+            service_name=service_name, local_port=local_port, remote_port=remote_port,
+            command_preview=preview,
+        )
+        valid_ports = all(isinstance(port, int) and 1024 <= port <= 65535
+                          for port in (local_port, remote_port))
+        if not (_SAFE_NAME.fullmatch(cluster_name) and _SAFE_NAME.fullmatch(namespace)
+                and _SAFE_NAME.fullmatch(service_name) and valid_ports):
+            return KindPortForwardResult(
+                **base, state="validation_failed", executed=False,
+                message="Servicio, namespace o puertos inválidos.",
+                recommended_action="Usa nombres seguros y puertos entre 1024 y 65535.",
+            )
+        profile, error = await self._authorized_profile(profile_id)
+        if error is not None or profile is None:
+            return KindPortForwardResult(
+                **base, state="connection_failed", executed=False,
+                message=error or "Perfil no disponible.",
+                recommended_action="Valida el perfil autorizado antes de abrir el port-forward.",
+            )
+        if profile.remote_platform != RemotePlatform.WINDOWS:
+            return KindPortForwardResult(
+                **base, state="unsupported_platform", executed=False,
+                message="El port-forward controlado requiere el host remoto Windows autorizado.",
+                recommended_action="Usa el perfil Windows docker-remote1.",
+            )
+        if not dry_run and confirmation != PORT_FORWARD_CONFIRMATION:
+            return KindPortForwardResult(
+                **base, state="confirmation_required", executed=False,
+                message="Abrir el port-forward requiere confirmación explícita.",
+                recommended_action=f"Proporciona confirmation={PORT_FORWARD_CONFIRMATION}.",
+            )
+        clusters = await self.list_clusters(profile_id)
+        cluster = next((item for item in clusters.clusters if item.name == cluster_name), None)
+        if cluster is None or not cluster.reachable:
+            return KindPortForwardResult(
+                **base, state="cluster_unavailable", executed=False,
+                message="El clúster solicitado no existe o no es alcanzable.",
+                recommended_action="Lista los clústeres y selecciona uno alcanzable.",
+            )
+        if dry_run:
+            return KindPortForwardResult(
+                **base, state="planned", executed=False,
+                message="Port-forward planificado; no se abrió ningún proceso.",
+                recommended_action=f"Confirma con {PORT_FORWARD_CONFIRMATION} para ejecutar.",
+            )
+        script = (
+            "$args=@('--context','kind-" + cluster_name + "','--namespace','" + namespace
+            + "','port-forward','service/" + service_name + "','" + str(local_port) + ":"
+            + str(remote_port) + "','--address','0.0.0.0');"
+            + "$p=Start-Process -FilePath 'kubectl' -ArgumentList $args -PassThru "
+            + "-WindowStyle Hidden;"
+            + "Write-Output $p.Id"
+        )
+        try:
+            result = await self._remote(
+                profile, "powershell", "-NoProfile", "-NonInteractive", "-Command", script
+            )
+        except (TimeoutError, OSError) as error:
+            return KindPortForwardResult(
+                **base, state="execution_failed", executed=False,
+                message="No se pudo iniciar el port-forward remoto.",
+                diagnostic=f"{type(error).__name__}",
+                recommended_action="Verifica kubectl y el perfil remoto.",
+            )
+        if result.returncode != 0:
+            return KindPortForwardResult(
+                **base, state="execution_failed", executed=False,
+                message="No se pudo iniciar el port-forward remoto.",
+                diagnostic=self._sanitize_diagnostic(result.stderr or result.stdout),
+                recommended_action="Revisa el servicio y el puerto remoto.",
+            )
+        try:
+            pid = int(result.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            return KindPortForwardResult(
+                **base, state="execution_failed", executed=False,
+                message="El port-forward se inició sin devolver un PID válido.",
+                recommended_action="Revisa el proceso kubectl en el host remoto.",
+            )
+        return KindPortForwardResult(
+            **base, state="started", executed=True, pid=pid,
+            endpoint=f"docker-remote1:{local_port}",
+            message="Port-forward iniciado correctamente.",
+            recommended_action=f"Cierra el proceso con stop_kind_port_forward(pid={pid}).",
+        )
+
+    async def stop_port_forward(
+        self, profile_id: str, pid: int, confirmation: str | None = None
+    ) -> KindPortForwardResult:
+        """Stop one remote port-forward process previously returned by this MCP."""
+
+        base: dict[str, Any] = dict(
+            profile_id=profile_id, cluster_name="", namespace="", service_name="",
+            local_port=0, remote_port=0,
+            command_preview=["Stop-Process", "-Id", str(pid), "-Force"],
+        )
+        if not isinstance(pid, int) or pid <= 0:
+            return KindPortForwardResult(
+                **base, state="validation_failed", executed=False,
+                message="El PID no es válido.",
+            )
+        profile, error = await self._authorized_profile(profile_id)
+        if error is not None or profile is None:
+            return KindPortForwardResult(
+                **base, state="connection_failed", executed=False,
+                message=error or "Perfil no disponible.",
+            )
+        if confirmation != STOP_PORT_FORWARD_CONFIRMATION:
+            return KindPortForwardResult(
+                **base, state="confirmation_required", executed=False,
+                message="Cerrar el port-forward requiere confirmación explícita.",
+                recommended_action=f"Proporciona confirmation={STOP_PORT_FORWARD_CONFIRMATION}.",
+            )
+        script = f"Stop-Process -Id {pid} -Force"
+        try:
+            result = await self._remote(
+                profile, "powershell", "-NoProfile", "-NonInteractive", "-Command", script
+            )
+        except (TimeoutError, OSError) as error:
+            return KindPortForwardResult(
+                **base, state="execution_failed", executed=False,
+                message="No se pudo cerrar el port-forward remoto.",
+                diagnostic=f"{type(error).__name__}",
+            )
+        if result.returncode != 0:
+            return KindPortForwardResult(
+                **base, state="execution_failed", executed=False,
+                message="No se pudo cerrar el port-forward remoto.",
+                diagnostic=self._sanitize_diagnostic(result.stderr or result.stdout),
+            )
+        return KindPortForwardResult(
+            **base, state="stopped", executed=True, pid=pid,
+            message="Port-forward cerrado correctamente.",
         )
 
     async def ensure_namespace(

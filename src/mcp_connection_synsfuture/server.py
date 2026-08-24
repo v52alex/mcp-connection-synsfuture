@@ -31,6 +31,7 @@ from .models import (
     KindImageLoadResult,
     KindManifestApplyResult,
     KindNamespaceEnsureResult,
+    KindPortForwardResult,
     KindPrerequisitesResult,
     KindWorkloadInspectResult,
     ProfileType,
@@ -339,6 +340,34 @@ async def apply_kind_manifest(
     return await create_kind_service().apply_manifest(
         profile_id, cluster_name, manifest_path, namespace, dry_run, confirmation
     )
+
+
+@mcp.tool(name="start_kind_port_forward", annotations=REMOTE_MUTATION)
+async def start_kind_port_forward(
+    profile_id: str,
+    cluster_name: str,
+    service_name: str,
+    namespace: str = "microservices",
+    local_port: int = 8080,
+    remote_port: int = 8080,
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> KindPortForwardResult:
+    """Plan or start a controlled remote port-forward for a Kind Service."""
+
+    return await create_kind_service().start_port_forward(
+        profile_id, cluster_name, service_name, namespace,
+        local_port, remote_port, dry_run, confirmation
+    )
+
+
+@mcp.tool(name="stop_kind_port_forward", annotations=REMOTE_DESTRUCTIVE)
+async def stop_kind_port_forward(
+    profile_id: str, pid: int, confirmation: str | None = None
+) -> KindPortForwardResult:
+    """Stop a remote port-forward process returned by start_kind_port_forward."""
+
+    return await create_kind_service().stop_port_forward(profile_id, pid, confirmation)
 
 
 @mcp.tool(name="inspect_kind_workload", annotations=READ_ONLY_EXTERNAL)
