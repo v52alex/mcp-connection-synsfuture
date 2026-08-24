@@ -73,9 +73,11 @@ class DockerBuildService:
             "--context",
             "<profile-context>",
             "build",
+            "--file",
+            dockerfile,
             "--tag",
             reference,
-            "<uploaded-context.tar>",
+            "<local-project-context>",
         ]
         if not inspection.build_ready:
             return self._result(
@@ -121,22 +123,20 @@ class DockerBuildService:
                 "El perfil autorizado no está disponible para el build.",
             )
         assert profile.docker_context is not None
-        archive_path: Path | None = None
         try:
-            archive_path = self._create_context_archive(project)
-            context_bytes = archive_path.read_bytes()
             result = await self._runner.run(
                 [
                     "docker",
                     "--context",
                     profile.docker_context,
                     "build",
+                    "--file",
+                    str(project / dockerfile),
                     "--tag",
                     reference,
-                    "-",
+                    str(project),
                 ],
                 self._timeout,
-                context_bytes,
             )
         except TimeoutError:
             return self._result(
@@ -148,9 +148,6 @@ class DockerBuildService:
                 preview,
                 "El build agotó el tiempo de espera.",
             )
-        finally:
-            if archive_path is not None:
-                archive_path.unlink(missing_ok=True)
         state = "built" if result.returncode == 0 else "build_failed"
         output = result.stderr + "\n" + result.stdout
         message = (
