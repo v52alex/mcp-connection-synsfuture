@@ -169,6 +169,7 @@ class DockerBuildResult(BaseModel):
     project_path: str
     command_preview: list[str] = Field(default_factory=list)
     message: str
+    diagnostic: str | None = None
     documentation_hint: str
 
 

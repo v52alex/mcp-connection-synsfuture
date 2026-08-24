@@ -151,7 +151,21 @@ class DockerBuildService:
             inspection.project_path,
             preview,
             message,
+            self._sanitize_build_diagnostics(result.stderr) if result.returncode != 0 else None,
         )
+
+    @staticmethod
+    def _sanitize_build_diagnostics(stderr: str) -> str | None:
+        lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+        if not lines:
+            return None
+        diagnostic = " | ".join(lines[-4:])
+        diagnostic = re.sub(
+            r"(?i)(password|passwd|secret|token|api[_-]?key)=([^\s]+)",
+            r"\1=[REDACTED]",
+            diagnostic,
+        )
+        return diagnostic[:1200]
 
     @staticmethod
     def _create_context_archive(project: Path) -> Path:
@@ -200,6 +214,7 @@ class DockerBuildService:
         project: str,
         preview: list[str],
         message: str,
+        diagnostic: str | None = None,
     ) -> DockerBuildResult:
         return DockerBuildResult(
             profile_id=profile_id,
@@ -209,5 +224,6 @@ class DockerBuildService:
             project_path=project,
             command_preview=preview,
             message=message,
+            diagnostic=diagnostic,
             documentation_hint=MCP_DOCUMENTATION_HINT,
         )
