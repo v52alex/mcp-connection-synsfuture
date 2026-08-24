@@ -132,6 +132,11 @@ class DockerBuildService:
             if profile.remote_platform is RemotePlatform.WINDOWS:
                 remote_script = (
                     "$p=Join-Path $env:TEMP 'mcp-build-context.tar';"
+                    f"$d='{profile.docker_command}';"
+                    "if ($d -eq 'docker' -and -not (Get-Command $d -ErrorAction SilentlyContinue)) "
+                    "{ Write-Error 'MCP_DOCKER_NOT_FOUND'; exit 127 };"
+                    "if ($d -ne 'docker' -and -not (Test-Path -LiteralPath $d)) "
+                    "{ Write-Error 'MCP_DOCKER_COMMAND_NOT_FOUND'; exit 127 };"
                     "$i=[Console]::OpenStandardInput();"
                     "$o=[IO.File]::Open($p,[IO.FileMode]::Create);"
                     "$i.CopyTo($o);$o.Dispose();"
@@ -180,10 +185,11 @@ class DockerBuildService:
             if archive_path is not None:
                 archive_path.unlink(missing_ok=True)
         state = "built" if result.returncode == 0 else "build_failed"
+        output = result.stderr + "\n" + result.stdout
         message = (
             "Imagen construida correctamente."
             if result.returncode == 0
-            else self._classify_build_failure(result.stderr)
+            else self._classify_build_failure(output)
         )
         return self._result(
             profile_id,
@@ -193,7 +199,7 @@ class DockerBuildService:
             inspection.project_path,
             preview,
             message,
-            self._sanitize_build_diagnostics(result.stderr) if result.returncode != 0 else None,
+            self._sanitize_build_diagnostics(output) if result.returncode != 0 else None,
         )
 
     @staticmethod
@@ -231,6 +237,14 @@ class DockerBuildService:
         """Return a bounded, non-sensitive build failure diagnosis."""
 
         normalized = stderr.lower()
+        if "mcp_docker_not_found" in normalized:
+            return "El comando Docker no está disponible en el PATH del host remoto."
+        if "mcp_docker_command_not_found" in normalized:
+            return "El ejecutable Docker configurado no existe en el host remoto."
+        if "powershell.exe" in normalized and "not found" in normalized:
+            return "PowerShell no está disponible en el host remoto."
+        if "cmd.exe" in normalized and "not found" in normalized:
+            return "cmd.exe no está disponible en el host remoto."
         if "unable to prepare context" in normalized or (
             "context" in normalized and "not found" in normalized
         ):
