@@ -61,16 +61,11 @@ class DockerBuildService:
         inspection = self.inspect_project(project_path, dockerfile)
         reference = f"{image_name}:{tag}"
         project = Path(inspection.project_path)
-        dockerfile_relative = str(
-            Path(inspection.dockerfile_path or dockerfile).relative_to(project)
-        )
         preview = [
             "docker",
             "--context",
             "<profile-context>",
             "build",
-            "--file",
-            dockerfile_relative,
             "--tag",
             reference,
             "<uploaded-context.tar>",
@@ -112,8 +107,6 @@ class DockerBuildService:
             archive_path = self._create_context_archive(project)
             remote_command = [
                 "build",
-                "--file",
-                dockerfile_relative,
                 "--tag",
                 reference,
                 "-",
