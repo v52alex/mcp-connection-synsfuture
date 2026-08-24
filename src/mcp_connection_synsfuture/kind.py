@@ -474,23 +474,26 @@ class KindService:
         loaded = await self._remote(
             profile, "kind", "load", "docker-image", image_reference, "--name", cluster_name
         )
+        succeeded = loaded.returncode == 0
+        diagnostic = self._sanitize_diagnostic(loaded.stderr or loaded.stdout)
         return KindImageLoadResult(
             profile_id=profile_id,
             cluster_name=cluster_name,
             image_reference=image_reference,
-            state="loaded" if loaded.returncode == 0 else "operation_failed",
-            executed=True,
+            state="loaded" if succeeded else "operation_failed",
+            executed=succeeded,
             command_preview=command_preview,
             message=(
                 "Imagen cargada en Kind."
-                if loaded.returncode == 0
-                else "Kind no pudo cargar la imagen."
+                if succeeded
+                else self._kind_error_message(loaded.stderr or loaded.stdout)
             ),
             recommended_action=(
                 None
-                if loaded.returncode == 0
+                if succeeded
                 else "Revisa el estado del cluster y los logs de Kind."
             ),
+            diagnostic=diagnostic,
             documentation_hint=MCP_DOCUMENTATION_HINT,
         )
 
@@ -688,7 +691,16 @@ class KindService:
             return "El host remoto rechazó la autenticación SSH para consultar Kind."
         if "cannot connect" in normalized or "docker daemon" in normalized:
             return "Kind está instalado, pero no puede acceder al runtime Docker remoto."
+        if "no such image" in normalized or "image not found" in normalized:
+            return "Kind no encuentra la imagen en el runtime Docker del host remoto."
+        if "cannot load" in normalized or "failed to load" in normalized:
+            return "Kind no pudo importar la imagen al cluster."
         return "Kind no pudo listar los clusters del host remoto; el comando devolvió un error."
+
+    @staticmethod
+    def _sanitize_diagnostic(output: str) -> str | None:
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        return " | ".join(lines[-3:])[:800] if lines else None
 
     @staticmethod
     def _load_failure(

@@ -249,6 +249,7 @@ class KindImageLoadResult(BaseModel):
     executed: bool
     command_preview: list[str] = Field(default_factory=list)
     message: str
+    diagnostic: str | None = None
     recommended_action: str | None = None
     documentation_hint: str = "Más información: consulta la documentación del MCP."
 
