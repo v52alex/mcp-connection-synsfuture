@@ -126,7 +126,9 @@ async def test_checks_docker_through_authorized_context(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_create_cluster_is_dry_run_by_default(tmp_path: Path) -> None:
-    service = KindService(StubRunner([]), profiles(tmp_path), FakeConnections())
+    service = KindService(
+        StubRunner([CommandResult(0, "other\n", "")]), profiles(tmp_path), FakeConnections()
+    )
 
     result = await service.create_cluster("docker-remote1", "microservices")
 
@@ -134,6 +136,19 @@ async def test_create_cluster_is_dry_run_by_default(tmp_path: Path) -> None:
     assert result.executed is False
     assert result.command_preview[-4:] == ["--name", "microservices", "--wait", "5m"]
     assert "CREATE_KIND_CLUSTER_ON_DOCKER_REMOTE" in (result.recommended_action or "")
+
+
+@pytest.mark.asyncio
+async def test_does_not_plan_existing_cluster(tmp_path: Path) -> None:
+    service = KindService(
+        StubRunner([CommandResult(0, "microservices\n", "")]), profiles(tmp_path), FakeConnections()
+    )
+
+    result = await service.create_cluster("docker-remote1", "microservices")
+
+    assert result.state == "already_exists"
+    assert result.executed is False
+    assert result.command_preview == []
 
 
 @pytest.mark.asyncio

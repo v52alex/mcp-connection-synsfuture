@@ -197,6 +197,48 @@ class KindService:
                 message=error or "Perfil no disponible.",
                 recommended_action="Valida el perfil autorizado antes de crear el clúster.",
             )
+        if not dry_run and confirmation != CREATE_CLUSTER_CONFIRMATION:
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="confirmation_required",
+                executed=False,
+                command_preview=preview,
+                message="La creación del clúster requiere confirmación explícita.",
+                recommended_action=f"Proporciona confirmation={CREATE_CLUSTER_CONFIRMATION}.",
+            )
+        try:
+            existing = await self._remote(profile, "kind", "get", "clusters")
+        except (FileNotFoundError, TimeoutError):
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="discovery_failed",
+                executed=False,
+                command_preview=preview,
+                message="No se pudo consultar los clústeres Kind existentes.",
+                recommended_action="Verifica la conexión y vuelve a listar los clústeres.",
+            )
+        if existing.returncode != 0:
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="discovery_failed",
+                executed=False,
+                command_preview=preview,
+                message="Kind no pudo listar los clústeres existentes.",
+                recommended_action="Corrige la disponibilidad de Kind antes de crear un clúster.",
+            )
+        if cluster_name in {line.strip() for line in existing.stdout.splitlines()}:
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="already_exists",
+                executed=False,
+                command_preview=[],
+                message="El clúster Kind ya existe; no se planificó una nueva creación.",
+                recommended_action=f"Inspecciona el contexto kind-{cluster_name}.",
+            )
         if dry_run:
             return KindClusterCreateResult(
                 profile_id=profile_id,
@@ -206,16 +248,6 @@ class KindService:
                 command_preview=preview,
                 message="Creación de clúster Kind planificada; no se ejecutó ningún cambio.",
                 recommended_action=f"Confirma con {CREATE_CLUSTER_CONFIRMATION} para ejecutar.",
-            )
-        if confirmation != CREATE_CLUSTER_CONFIRMATION:
-            return KindClusterCreateResult(
-                profile_id=profile_id,
-                cluster_name=cluster_name,
-                state="confirmation_required",
-                executed=False,
-                command_preview=preview,
-                message="La creación del clúster requiere confirmación explícita.",
-                recommended_action=f"Proporciona confirmation={CREATE_CLUSTER_CONFIRMATION}.",
             )
         prerequisites = await self.check_prerequisites(profile_id)
         if not (
