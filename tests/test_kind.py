@@ -106,6 +106,25 @@ async def test_load_image_is_dry_run_by_default(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_checks_docker_through_authorized_context(tmp_path: Path) -> None:
+    runner = StubRunner(
+        [
+            CommandResult(0, "kind v0.24.0", ""),
+            CommandResult(0, "Client Version: v1.30", ""),
+            CommandResult(0, "Docker info", ""),
+        ]
+    )
+    service = KindService(runner, profiles(tmp_path), FakeConnections())
+
+    result = await service.check_prerequisites("docker-remote1")
+
+    assert result.kind_available is True
+    assert result.kubectl_available is True
+    assert result.docker_available is True
+    assert runner.calls[-1] == ["docker", "--context", "windows-docker", "info"]
+
+
+@pytest.mark.asyncio
 async def test_rejects_unsafe_image_reference(tmp_path: Path) -> None:
     service = KindService(StubRunner([]), profiles(tmp_path), FakeConnections())
 

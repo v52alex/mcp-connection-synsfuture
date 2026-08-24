@@ -60,13 +60,20 @@ class KindService:
         checks: list[tuple[str, tuple[str, ...]]] = [
             ("kind", ("kind", "version")),
             ("kubectl", ("kubectl", "version", "--client")),
-            ("docker", ("docker", "info")),
         ]
         availability: dict[str, bool] = {}
         try:
             for name, command in checks:
                 result = await self._remote(profile, *command)
                 availability[name] = result.returncode == 0
+            docker_context = profile.docker_context
+            if docker_context is None:
+                availability["docker"] = False
+            else:
+                docker_result = await self._runner.run(
+                    ["docker", "--context", docker_context, "info"], self._timeout
+                )
+                availability["docker"] = docker_result.returncode == 0
         except (FileNotFoundError, TimeoutError):
             return KindPrerequisitesResult(
                 profile_id=profile_id,
