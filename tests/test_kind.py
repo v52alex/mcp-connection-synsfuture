@@ -125,6 +125,40 @@ async def test_checks_docker_through_authorized_context(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_cluster_is_dry_run_by_default(tmp_path: Path) -> None:
+    service = KindService(StubRunner([]), profiles(tmp_path), FakeConnections())
+
+    result = await service.create_cluster("docker-remote1", "microservices")
+
+    assert result.state == "planned"
+    assert result.executed is False
+    assert result.command_preview[-4:] == ["--name", "microservices", "--wait", "5m"]
+    assert "CREATE_KIND_CLUSTER_ON_DOCKER_REMOTE" in (result.recommended_action or "")
+
+
+@pytest.mark.asyncio
+async def test_create_cluster_requires_confirmation(tmp_path: Path) -> None:
+    service = KindService(StubRunner([]), profiles(tmp_path), FakeConnections())
+
+    result = await service.create_cluster(
+        "docker-remote1", "microservices", dry_run=False, confirmation="wrong"
+    )
+
+    assert result.state == "confirmation_required"
+    assert result.executed is False
+
+
+@pytest.mark.asyncio
+async def test_rejects_unsafe_cluster_name(tmp_path: Path) -> None:
+    service = KindService(StubRunner([]), profiles(tmp_path), FakeConnections())
+
+    result = await service.create_cluster("docker-remote1", "microservices;rm")
+
+    assert result.state == "validation_failed"
+    assert result.executed is False
+
+
+@pytest.mark.asyncio
 async def test_rejects_unsafe_image_reference(tmp_path: Path) -> None:
     service = KindService(StubRunner([]), profiles(tmp_path), FakeConnections())
 

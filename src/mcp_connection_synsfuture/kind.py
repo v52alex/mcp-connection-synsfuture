@@ -8,6 +8,7 @@ from typing import Protocol
 from .models import (
     ConnectionProfile,
     ConnectionState,
+    KindClusterCreateResult,
     KindClusterInspectResult,
     KindClusterListResult,
     KindClusterSummary,
@@ -21,6 +22,7 @@ from .service import MCP_DOCUMENTATION_HINT, ConnectionProfileService
 _SAFE_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,61}[a-z0-9])?$")
 _SAFE_IMAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,254}$")
 LOAD_IMAGES_CONFIRMATION = "LOAD_IMAGES_TO_KIND_ON_WINDOWS_DOCKER"
+CREATE_CLUSTER_CONFIRMATION = "CREATE_KIND_CLUSTER_ON_DOCKER_REMOTE"
 
 
 class CommandRunner(Protocol):
@@ -160,6 +162,109 @@ class KindService:
                 else "Crea o inicia un cluster Kind en el host remoto."
             ),
             documentation_hint=MCP_DOCUMENTATION_HINT,
+        )
+
+    async def create_cluster(
+        self,
+        profile_id: str,
+        cluster_name: str,
+        dry_run: bool = True,
+        confirmation: str | None = None,
+    ) -> KindClusterCreateResult:
+        """Plan or create a fixed-shape Kind cluster on the authorized host."""
+
+        command = ("kind", "create", "cluster", "--name", cluster_name, "--wait", "5m")
+        preview = list(command)
+        if not _SAFE_NAME.fullmatch(cluster_name):
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="validation_failed",
+                executed=False,
+                command_preview=preview,
+                message="El nombre del clúster no cumple el formato permitido.",
+                recommended_action="Usa minúsculas, números, puntos o guiones.",
+            )
+
+        profile, error = await self._authorized_profile(profile_id)
+        if error is not None or profile is None:
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="connection_failed",
+                executed=False,
+                command_preview=preview,
+                message=error or "Perfil no disponible.",
+                recommended_action="Valida el perfil autorizado antes de crear el clúster.",
+            )
+        if dry_run:
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="planned",
+                executed=False,
+                command_preview=preview,
+                message="Creación de clúster Kind planificada; no se ejecutó ningún cambio.",
+                recommended_action=f"Confirma con {CREATE_CLUSTER_CONFIRMATION} para ejecutar.",
+            )
+        if confirmation != CREATE_CLUSTER_CONFIRMATION:
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="confirmation_required",
+                executed=False,
+                command_preview=preview,
+                message="La creación del clúster requiere confirmación explícita.",
+                recommended_action=f"Proporciona confirmation={CREATE_CLUSTER_CONFIRMATION}.",
+            )
+        prerequisites = await self.check_prerequisites(profile_id)
+        if not (
+            prerequisites.connected
+            and prerequisites.kind_available
+            and prerequisites.kubectl_available
+            and prerequisites.docker_available
+        ):
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="prerequisites_failed",
+                executed=False,
+                command_preview=preview,
+                message="No se puede crear el clúster porque faltan prerrequisitos.",
+                recommended_action=prerequisites.message,
+            )
+        try:
+            result = await self._remote(profile, *command)
+        except (FileNotFoundError, TimeoutError):
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="execution_failed",
+                executed=False,
+                command_preview=preview,
+                message="No se pudo ejecutar la creación remota del clúster.",
+                recommended_action="Revisa la conexión SSH y vuelve a validar los prerrequisitos.",
+            )
+        if result.returncode != 0:
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="execution_failed",
+                executed=False,
+                command_preview=preview,
+                message=self._kind_error_message(result.stderr),
+                recommended_action="Consulta el estado del clúster y revisa los logs de Kind.",
+            )
+        return KindClusterCreateResult(
+            profile_id=profile_id,
+            cluster_name=cluster_name,
+            state="created",
+            executed=True,
+            command_preview=preview,
+            message="Clúster Kind creado correctamente.",
+            recommended_action=(
+                "Lista los clústeres y verifica el contexto kind-" + cluster_name + "."
+            ),
         )
 
     async def inspect_cluster(

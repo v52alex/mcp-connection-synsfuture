@@ -23,6 +23,7 @@ from .models import (
     DockerMutationResult,
     DockerProjectInspectionResult,
     DockerReadResult,
+    KindClusterCreateResult,
     KindClusterInspectResult,
     KindClusterListResult,
     KindImageLoadResult,
@@ -212,6 +213,20 @@ async def list_kind_clusters(profile_id: str) -> KindClusterListResult:
     """List remote Kind clusters and recommend an accessible cluster."""
 
     return await create_kind_service().list_clusters(profile_id)
+
+
+@mcp.tool(name="create_kind_cluster", annotations=REMOTE_MUTATION)
+async def create_kind_cluster(
+    profile_id: str,
+    cluster_name: str,
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> KindClusterCreateResult:
+    """Plan or create a remote Kind cluster after explicit confirmation."""
+
+    return await create_kind_service().create_cluster(
+        profile_id, cluster_name, dry_run, confirmation
+    )
 
 
 @mcp.tool(name="check_kind_prerequisites", annotations=READ_ONLY_EXTERNAL)

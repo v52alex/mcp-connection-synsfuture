@@ -183,6 +183,21 @@ La herramienta lista todos los clusters reportados por `kind` y comprueba el
 acceso real de `kubectl` a cada contexto. Recomienda `microservices` cuando está
 disponible, pero no selecciona ni modifica ningún cluster automáticamente.
 
+La creación de un cluster también está controlada por el MCP y no ejecuta cambios
+por defecto:
+
+```text
+create_kind_cluster(
+  profile_id="docker-remote1",
+  cluster_name="microservices",
+  dry_run=true
+)
+```
+
+Para ejecutarla se debe enviar `dry_run=false` y la confirmación
+`CREATE_KIND_CLUSTER_ON_DOCKER_REMOTE`. El comando remoto queda limitado a
+`kind create cluster --name <nombre> --wait 5m`; no se aceptan flags arbitrarios.
+
 Después se puede inspeccionar el cluster elegido:
 
 ```text
