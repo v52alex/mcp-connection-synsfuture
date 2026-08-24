@@ -458,14 +458,14 @@ class KindService:
             )
         try:
             image = await self._remote(profile, "docker", "image", "inspect", image_reference)
-        except TimeoutError:
+        except (TimeoutError, OSError) as error:
             return self._load_failure(
                 profile_id,
                 cluster_name,
                 image_reference,
-                "La inspección de la imagen agotó el tiempo de espera.",
+                "No se pudo inspeccionar la imagen en el Docker remoto.",
                 command_preview,
-                "Verifica la disponibilidad del Docker remoto.",
+                f"{type(error).__name__}: verifica la disponibilidad del Docker remoto.",
             )
         if image.returncode != 0:
             return self._load_failure(
@@ -507,14 +507,14 @@ class KindService:
                 cluster_name,
                 timeout_seconds=300.0,
             )
-        except TimeoutError:
+        except (TimeoutError, OSError) as error:
             return self._load_failure(
                 profile_id,
                 cluster_name,
                 image_reference,
-                "Kind agotó el tiempo de espera al cargar la imagen.",
+                "No se pudo ejecutar la carga de la imagen en Kind.",
                 command_preview,
-                "La carga puede tardar varios minutos para imágenes grandes; "
+                f"{type(error).__name__}: la carga puede tardar varios minutos; "
                 "reintenta la operación.",
             )
         succeeded = loaded.returncode == 0
