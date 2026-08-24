@@ -1,6 +1,8 @@
 """Local Docker project inspection and profile-scoped image builds."""
 
 import re
+import tarfile
+import tempfile
 from pathlib import Path
 
 from .docker_read import IMAGE_PATTERN
@@ -62,15 +64,17 @@ class DockerBuildService:
         dockerfile_relative = str(
             Path(inspection.dockerfile_path or dockerfile).relative_to(project)
         )
-        command = [
+        preview = [
+            "docker",
+            "--context",
+            "<profile-context>",
             "build",
             "--file",
             dockerfile_relative,
             "--tag",
             reference,
-            inspection.project_path,
+            "<uploaded-context.tar>",
         ]
-        preview = ["docker", "--context", "<profile-context>", *command]
         if not inspection.build_ready:
             return self._result(
                 profile_id,
@@ -103,9 +107,20 @@ class DockerBuildService:
                 preview,
                 connection.message,
             )
+        archive_path: Path | None = None
         try:
+            archive_path = self._create_context_archive(project)
+            remote_command = [
+                "build",
+                "--file",
+                dockerfile_relative,
+                "--tag",
+                reference,
+                str(archive_path),
+            ]
             result = await self._runner.run(
-                ["docker", "--context", connection.docker_context, *command], self._timeout
+                ["docker", "--context", connection.docker_context, *remote_command],
+                self._timeout,
             )
         except TimeoutError:
             return self._result(
@@ -117,6 +132,9 @@ class DockerBuildService:
                 preview,
                 "El build agotó el tiempo de espera.",
             )
+        finally:
+            if archive_path is not None:
+                archive_path.unlink(missing_ok=True)
         state = "built" if result.returncode == 0 else "build_failed"
         message = (
             "Imagen construida correctamente."
@@ -132,6 +150,23 @@ class DockerBuildService:
             preview,
             message,
         )
+
+    @staticmethod
+    def _create_context_archive(project: Path) -> Path:
+        """Create a temporary Docker context without secrets or build artifacts."""
+
+        with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as archive_file:
+            archive_path = Path(archive_file.name)
+        excluded = {".git", ".venv", "target", "__pycache__", ".env"}
+
+        def include(path: Path) -> bool:
+            return not any(part in excluded or part.startswith(".env.") for part in path.parts)
+
+        with tarfile.open(archive_path, "w") as archive:
+            for path in project.rglob("*"):
+                if path.is_file() and include(path.relative_to(project)):
+                    archive.add(path, arcname=str(path.relative_to(project)))
+        return archive_path
 
     @staticmethod
     def _classify_build_failure(stderr: str) -> str:
