@@ -756,6 +756,21 @@ class KindService:
         if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) for key in keys):
             raise ValueError("keys contain an invalid environment variable name")
         values = self._read_env_keys(Path(env_file).expanduser().resolve(), keys)
+        aliases = {
+            "DB_PASSWORD": "MYSQL_PASSWORD",
+            "DATABASE_USER": "MYSQL_USER",
+        }
+        for target, source in aliases.items():
+            if target in keys and target not in values:
+                source_value = self._read_env_keys(Path(env_file).expanduser().resolve(), [source])
+                if source in source_value:
+                    values[target] = source_value[source]
+        if "DATABASE_URL" in keys and "DATABASE_URL" not in values:
+            mysql = self._read_env_keys(Path(env_file).expanduser().resolve(), ["MYSQL_DATABASE"])
+            if mysql.get("MYSQL_DATABASE"):
+                values["DATABASE_URL"] = (
+                    "jdbc:mysql://mysql:3306/" + mysql["MYSQL_DATABASE"]
+                )
         missing = [key for key in keys if key not in values]
         if missing:
             raise ValueError(f"Missing requested environment keys: {', '.join(missing)}")
