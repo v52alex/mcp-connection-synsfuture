@@ -208,6 +208,22 @@ inspect_kind_cluster(
 )
 ```
 
+Antes de desplegar, el namespace puede verificarse o crearse mediante una
+operación controlada:
+
+```text
+ensure_kind_namespace(
+  profile_id="docker-remote1",
+  cluster_name="microservices",
+  namespace="microservices",
+  dry_run=true
+)
+```
+
+La herramienta devuelve `already_exists` cuando el namespace ya está creado. La
+creación exige `dry_run=false` y la confirmación
+`ENSURE_KIND_NAMESPACE_ON_DOCKER_REMOTE`.
+
 La carga de imágenes es el primer paso mutante y permanece en `dry_run` por
 defecto:
 

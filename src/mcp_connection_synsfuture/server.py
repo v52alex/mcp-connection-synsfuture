@@ -27,6 +27,7 @@ from .models import (
     KindClusterInspectResult,
     KindClusterListResult,
     KindImageLoadResult,
+    KindNamespaceEnsureResult,
     KindPrerequisitesResult,
     ProfileType,
 )
@@ -250,6 +251,21 @@ async def inspect_kind_cluster(
     """Inspect nodes and namespace for a cluster returned by list_kind_clusters."""
 
     return await create_kind_service().inspect_cluster(profile_id, cluster_name, namespace)
+
+
+@mcp.tool(name="ensure_kind_namespace", annotations=REMOTE_MUTATION)
+async def ensure_kind_namespace(
+    profile_id: str,
+    cluster_name: str,
+    namespace: str,
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> KindNamespaceEnsureResult:
+    """Plan or create a namespace on an existing Kind cluster."""
+
+    return await create_kind_service().ensure_namespace(
+        profile_id, cluster_name, namespace, dry_run, confirmation
+    )
 
 
 @mcp.tool(name="load_images_to_kind", annotations=REMOTE_MUTATION)

@@ -174,6 +174,41 @@ async def test_rejects_unsafe_cluster_name(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_ensures_namespace_with_dry_run(tmp_path: Path) -> None:
+    runner = StubRunner(
+        [
+            CommandResult(0, "microservices\n", ""),
+            CommandResult(0, "node\n", ""),
+            CommandResult(1, "", "NotFound"),
+        ]
+    )
+    service = KindService(runner, profiles(tmp_path), FakeConnections())
+
+    result = await service.ensure_namespace("docker-remote1", "microservices", "microservices")
+
+    assert result.state == "planned"
+    assert result.executed is False
+    assert "ENSURE_KIND_NAMESPACE_ON_DOCKER_REMOTE" in (result.recommended_action or "")
+
+
+@pytest.mark.asyncio
+async def test_does_not_plan_existing_namespace(tmp_path: Path) -> None:
+    runner = StubRunner(
+        [
+            CommandResult(0, "microservices\n", ""),
+            CommandResult(0, "node\n", ""),
+            CommandResult(0, "namespace/microservices\n", ""),
+        ]
+    )
+    service = KindService(runner, profiles(tmp_path), FakeConnections())
+
+    result = await service.ensure_namespace("docker-remote1", "microservices", "microservices")
+
+    assert result.state == "already_exists"
+    assert result.executed is False
+
+
+@pytest.mark.asyncio
 async def test_rejects_unsafe_image_reference(tmp_path: Path) -> None:
     service = KindService(StubRunner([]), profiles(tmp_path), FakeConnections())
 

@@ -270,3 +270,19 @@ class KindClusterCreateResult(BaseModel):
     message: str
     recommended_action: str | None = None
     documentation_hint: str = "Más información: consulta la documentación del MCP."
+
+
+class KindNamespaceEnsureResult(BaseModel):
+    """Dry-run or execution result for ensuring a remote Kubernetes namespace."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile_id: str
+    cluster_name: str
+    namespace: str
+    state: str
+    executed: bool
+    command_preview: list[str] = Field(default_factory=list)
+    message: str
+    recommended_action: str | None = None
+    documentation_hint: str = "Más información: consulta la documentación del MCP."

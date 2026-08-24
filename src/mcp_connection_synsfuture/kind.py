@@ -13,6 +13,7 @@ from .models import (
     KindClusterListResult,
     KindClusterSummary,
     KindImageLoadResult,
+    KindNamespaceEnsureResult,
     KindPrerequisitesResult,
 )
 from .process import CommandResult
@@ -23,6 +24,7 @@ _SAFE_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,61}[a-z0-9])?$")
 _SAFE_IMAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,254}$")
 LOAD_IMAGES_CONFIRMATION = "LOAD_IMAGES_TO_KIND_ON_WINDOWS_DOCKER"
 CREATE_CLUSTER_CONFIRMATION = "CREATE_KIND_CLUSTER_ON_DOCKER_REMOTE"
+ENSURE_NAMESPACE_CONFIRMATION = "ENSURE_KIND_NAMESPACE_ON_DOCKER_REMOTE"
 
 
 class CommandRunner(Protocol):
@@ -490,6 +492,143 @@ class KindService:
                 else "Revisa el estado del cluster y los logs de Kind."
             ),
             documentation_hint=MCP_DOCUMENTATION_HINT,
+        )
+
+    async def ensure_namespace(
+        self,
+        profile_id: str,
+        cluster_name: str,
+        namespace: str,
+        dry_run: bool = True,
+        confirmation: str | None = None,
+    ) -> KindNamespaceEnsureResult:
+        """Plan or create a namespace on an explicitly identified Kind cluster."""
+
+        command = ("kubectl", "--context", f"kind-{cluster_name}", "create", "namespace", namespace)
+        preview = list(command)
+        if not _SAFE_NAME.fullmatch(cluster_name) or not _SAFE_NAME.fullmatch(namespace):
+            return KindNamespaceEnsureResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                namespace=namespace,
+                state="validation_failed",
+                executed=False,
+                command_preview=preview,
+                message="El nombre del clúster o namespace no cumple el formato permitido.",
+                recommended_action="Usa minúsculas, números, puntos o guiones.",
+            )
+        profile, error = await self._authorized_profile(profile_id)
+        if error is not None or profile is None:
+            return KindNamespaceEnsureResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                namespace=namespace,
+                state="connection_failed",
+                executed=False,
+                command_preview=preview,
+                message=error or "Perfil no disponible.",
+                recommended_action="Valida el perfil autorizado antes de operar el namespace.",
+            )
+        if not dry_run and confirmation != ENSURE_NAMESPACE_CONFIRMATION:
+            return KindNamespaceEnsureResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                namespace=namespace,
+                state="confirmation_required",
+                executed=False,
+                command_preview=preview,
+                message="La creación del namespace requiere confirmación explícita.",
+                recommended_action=f"Proporciona confirmation={ENSURE_NAMESPACE_CONFIRMATION}.",
+            )
+        clusters = await self.list_clusters(profile_id)
+        cluster = next((item for item in clusters.clusters if item.name == cluster_name), None)
+        if cluster is None or not cluster.reachable:
+            return KindNamespaceEnsureResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                namespace=namespace,
+                state="cluster_unavailable",
+                executed=False,
+                command_preview=preview,
+                message="El clúster solicitado no existe o no es alcanzable.",
+                recommended_action="Lista los clústeres y selecciona uno alcanzable.",
+            )
+        try:
+            existing = await self._remote(
+                profile,
+                "kubectl",
+                "--context",
+                cluster.context,
+                "get",
+                "namespace",
+                namespace,
+            )
+        except (FileNotFoundError, TimeoutError):
+            return KindNamespaceEnsureResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                namespace=namespace,
+                state="discovery_failed",
+                executed=False,
+                command_preview=preview,
+                message="No se pudo consultar el namespace existente.",
+                recommended_action="Verifica kubectl y la conexión remota.",
+            )
+        if existing.returncode == 0:
+            return KindNamespaceEnsureResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                namespace=namespace,
+                state="already_exists",
+                executed=False,
+                command_preview=[],
+                message="El namespace ya existe; no se planificó una creación.",
+                recommended_action=f"Continúa con el despliegue en {namespace}.",
+            )
+        if dry_run:
+            return KindNamespaceEnsureResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                namespace=namespace,
+                state="planned",
+                executed=False,
+                command_preview=preview,
+                message="Creación de namespace planificada; no se ejecutó ningún cambio.",
+                recommended_action=f"Confirma con {ENSURE_NAMESPACE_CONFIRMATION} para ejecutar.",
+            )
+        try:
+            result = await self._remote(profile, *command)
+        except (FileNotFoundError, TimeoutError):
+            return KindNamespaceEnsureResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                namespace=namespace,
+                state="execution_failed",
+                executed=False,
+                command_preview=preview,
+                message="No se pudo ejecutar la creación remota del namespace.",
+                recommended_action="Revisa la conexión SSH y vuelve a intentarlo.",
+            )
+        if result.returncode != 0:
+            return KindNamespaceEnsureResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                namespace=namespace,
+                state="execution_failed",
+                executed=False,
+                command_preview=preview,
+                message="kubectl no pudo crear el namespace.",
+                recommended_action="Revisa el estado del clúster y los permisos de kubectl.",
+            )
+        return KindNamespaceEnsureResult(
+            profile_id=profile_id,
+            cluster_name=cluster_name,
+            namespace=namespace,
+            state="created",
+            executed=True,
+            command_preview=preview,
+            message="Namespace creado correctamente.",
+            recommended_action=f"Inspecciona nuevamente el namespace {namespace}.",
         )
 
     async def _authorized_profile(
