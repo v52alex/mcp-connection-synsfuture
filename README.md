@@ -190,13 +190,27 @@ por defecto:
 create_kind_cluster(
   profile_id="docker-remote1",
   cluster_name="microservices",
+  config_path="/ruta/local/kind-microservices.yaml",
   dry_run=true
 )
 ```
 
-Para ejecutarla se debe enviar `dry_run=false` y la confirmación
+`config_path` permite transferir de forma segura un archivo Kind local al host
+remoto; el MCP lo elimina después de crear el clúster. Para ejecutarla se debe enviar `dry_run=false` y la confirmación
 `CREATE_KIND_CLUSTER_ON_DOCKER_REMOTE`. El comando remoto queda limitado a
-`kind create cluster --name <nombre> --wait 5m`; no se aceptan flags arbitrarios.
+`kind create cluster --name <nombre> [--config <archivo transferido>] --wait 5m`; no se aceptan flags arbitrarios.
+
+Para eliminar un clúster existente se usa la operación destructiva explícita:
+
+```text
+delete_kind_cluster(
+  profile_id="docker-remote1",
+  cluster_name="microservices",
+  dry_run=true
+)
+```
+
+La ejecución requiere `DELETE_KIND_CLUSTER_ON_DOCKER_REMOTE`.
 
 Después se puede inspeccionar el cluster elegido:
 

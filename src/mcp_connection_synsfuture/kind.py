@@ -35,6 +35,7 @@ _SAFE_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,61}[a-z0-9])?$")
 _SAFE_IMAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,254}$")
 LOAD_IMAGES_CONFIRMATION = "LOAD_IMAGES_TO_KIND_ON_WINDOWS_DOCKER"
 CREATE_CLUSTER_CONFIRMATION = "CREATE_KIND_CLUSTER_ON_DOCKER_REMOTE"
+DELETE_CLUSTER_CONFIRMATION = "DELETE_KIND_CLUSTER_ON_DOCKER_REMOTE"
 ENSURE_NAMESPACE_CONFIRMATION = "ENSURE_KIND_NAMESPACE_ON_DOCKER_REMOTE"
 HELM_RELEASE_CONFIRMATION = "INSTALL_HELM_RELEASE_ON_DOCKER_REMOTE"
 INGRESS_CONTROLLER_CONFIRMATION = "INSTALL_KIND_INGRESS_CONTROLLER_ON_DOCKER_REMOTE"
@@ -194,10 +195,15 @@ class KindService:
         cluster_name: str,
         dry_run: bool = True,
         confirmation: str | None = None,
+        config_path: str | None = None,
     ) -> KindClusterCreateResult:
         """Plan or create a fixed-shape Kind cluster on the authorized host."""
 
-        command = ("kind", "create", "cluster", "--name", cluster_name, "--wait", "5m")
+        config = Path(config_path).expanduser().resolve() if config_path else None
+        command = ["kind", "create", "cluster", "--name", cluster_name]
+        if config is not None:
+            command += ["--config", "<uploaded-kind-config>"]
+        command += ["--wait", "5m"]
         preview = list(command)
         if not _SAFE_NAME.fullmatch(cluster_name):
             return KindClusterCreateResult(
@@ -230,6 +236,15 @@ class KindService:
                 command_preview=preview,
                 message="La creación del clúster requiere confirmación explícita.",
                 recommended_action=f"Proporciona confirmation={CREATE_CLUSTER_CONFIRMATION}.",
+            )
+        if config is not None and not config.is_file():
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="validation_failed",
+                executed=False,
+                command_preview=preview,
+                message="El archivo de configuración Kind no existe.",
             )
         try:
             existing = await self._remote(profile, "kind", "get", "clusters")
@@ -290,7 +305,38 @@ class KindService:
                 recommended_action=prerequisites.message,
             )
         try:
-            result = await self._remote(profile, *command)
+            if config is None:
+                result = await self._remote(profile, *command)
+            else:
+                encoded = base64.b64encode(gzip.compress(config.read_bytes())).decode("ascii")
+                if profile.remote_platform is RemotePlatform.WINDOWS:
+                    script = (
+                        "$p=Join-Path $env:TEMP 'mcp-kind-config.yaml';"
+                        f"$b=[Convert]::FromBase64String('{encoded}');"
+                        "$ms=New-Object IO.MemoryStream(,$b);"
+                        "$gz=New-Object IO.Compression.GzipStream($ms,"
+                        "[IO.Compression.CompressionMode]::Decompress);"
+                        "$fs=[IO.File]::Create($p);$gz.CopyTo($fs);$fs.Close();$gz.Close();$ms.Close();"
+                        f"kind create cluster --name {cluster_name} --config $p --wait 5m;"
+                        "$c=$LASTEXITCODE;Remove-Item -LiteralPath $p -Force;exit $c"
+                    )
+                    result = await self._remote(
+                        profile,
+                        "powershell.exe",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        script,
+                        timeout_seconds=360.0,
+                    )
+                else:
+                    script = (
+                        "p=$(mktemp /tmp/mcp-kind-config.XXXXXX.yaml);"
+                        f"printf '%s' '{encoded}' | base64 -d | gzip -d >\"$p\";"
+                        f'kind create cluster --name {cluster_name} --config "$p" --wait 5m;'
+                        'c=$?;rm -f "$p";exit $c'
+                    )
+                    result = await self._remote(profile, "sh", "-c", script, timeout_seconds=360.0)
         except (FileNotFoundError, TimeoutError):
             return KindClusterCreateResult(
                 profile_id=profile_id,
@@ -321,6 +367,85 @@ class KindService:
             recommended_action=(
                 "Lista los clústeres y verifica el contexto kind-" + cluster_name + "."
             ),
+        )
+
+    async def delete_cluster(
+        self,
+        profile_id: str,
+        cluster_name: str,
+        dry_run: bool = True,
+        confirmation: str | None = None,
+    ) -> KindClusterCreateResult:
+        preview = ["kind", "delete", "cluster", "--name", cluster_name]
+        if not _SAFE_NAME.fullmatch(cluster_name):
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="validation_failed",
+                executed=False,
+                command_preview=preview,
+                message="El nombre del clúster no cumple el formato permitido.",
+            )
+        profile, error = await self._authorized_profile(profile_id)
+        if error is not None or profile is None:
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="connection_failed",
+                executed=False,
+                command_preview=preview,
+                message=error or "Perfil no disponible.",
+            )
+        listed = await self.list_clusters(profile_id)
+        if not any(item.name == cluster_name for item in listed.clusters):
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="not_found",
+                executed=False,
+                command_preview=preview,
+                message="El clúster Kind no existe.",
+            )
+        if dry_run:
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="planned",
+                executed=False,
+                command_preview=preview,
+                message="Eliminación planificada; el clúster no fue modificado.",
+                recommended_action=f"Confirma con {DELETE_CLUSTER_CONFIRMATION} para ejecutar.",
+            )
+        if confirmation != DELETE_CLUSTER_CONFIRMATION:
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="confirmation_required",
+                executed=False,
+                command_preview=preview,
+                message="La eliminación requiere confirmación explícita.",
+                recommended_action=f"Proporciona confirmation={DELETE_CLUSTER_CONFIRMATION}.",
+            )
+        try:
+            result = await self._remote(profile, *preview, timeout_seconds=180.0)
+        except (FileNotFoundError, TimeoutError):
+            return KindClusterCreateResult(
+                profile_id=profile_id,
+                cluster_name=cluster_name,
+                state="execution_failed",
+                executed=False,
+                command_preview=preview,
+                message="No se pudo ejecutar la eliminación remota.",
+            )
+        return KindClusterCreateResult(
+            profile_id=profile_id,
+            cluster_name=cluster_name,
+            state="deleted" if result.returncode == 0 else "execution_failed",
+            executed=result.returncode == 0,
+            command_preview=preview,
+            message="Clúster Kind eliminado correctamente."
+            if result.returncode == 0
+            else self._kind_error_message(result.stderr),
         )
 
     async def inspect_cluster(
@@ -539,9 +664,7 @@ class KindService:
                 else self._kind_error_message(loaded.stderr or loaded.stdout)
             ),
             recommended_action=(
-                None
-                if succeeded
-                else "Revisa el estado del cluster y los logs de Kind."
+                None if succeeded else "Revisa el estado del cluster y los logs de Kind."
             ),
             diagnostic=diagnostic,
             documentation_hint=MCP_DOCUMENTATION_HINT,
@@ -558,8 +681,16 @@ class KindService:
     ) -> KindManifestApplyResult:
         path = Path(manifest_path).expanduser().resolve()
         preview = [
-            "ssh", "<ssh-profile>", "kubectl", "--context", f"kind-{cluster_name}",
-            "apply", "--namespace", namespace, "-f", "-",
+            "ssh",
+            "<ssh-profile>",
+            "kubectl",
+            "--context",
+            f"kind-{cluster_name}",
+            "apply",
+            "--namespace",
+            namespace,
+            "-f",
+            "-",
         ]
         base: dict[str, object] = dict(
             profile_id=profile_id,
@@ -570,8 +701,12 @@ class KindService:
         )
         if not path.is_file():
             return KindManifestApplyResult.model_validate(
-                {**base, "state": "validation_failed", "executed": False,
-                 "message": "El manifiesto no existe."}
+                {
+                    **base,
+                    "state": "validation_failed",
+                    "executed": False,
+                    "message": "El manifiesto no existe.",
+                }
             )
         listed = await self.list_clusters(profile_id)
         cluster = next((item for item in listed.clusters if item.name == cluster_name), None)
@@ -583,22 +718,36 @@ class KindService:
             or profile.ssh_profile is None
         ):
             return KindManifestApplyResult.model_validate(
-                {**base, "state": "connection_failed", "executed": False,
-                 "message": "El cluster o perfil no está disponible."}
+                {
+                    **base,
+                    "state": "connection_failed",
+                    "executed": False,
+                    "message": "El cluster o perfil no está disponible.",
+                }
             )
         if dry_run:
             return KindManifestApplyResult.model_validate(
-                {**base, "state": "planned", "executed": False,
-                 "message": "Aplicación planificada; el cluster no fue modificado.",
-                 "recommended_action": (
-                     "Confirma con APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE para ejecutar."
-                 )}
+                {
+                    **base,
+                    "state": "planned",
+                    "executed": False,
+                    "message": "Aplicación planificada; el cluster no fue modificado.",
+                    "recommended_action": (
+                        "Confirma con APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE para ejecutar."
+                    ),
+                }
             )
         if confirmation != "APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE":
             return KindManifestApplyResult.model_validate(
-                {**base, "state": "confirmation_required", "executed": False,
-                 "message": "La aplicación requiere confirmación explícita.",
-                 "recommended_action": "Usa confirmation='APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE'."}
+                {
+                    **base,
+                    "state": "confirmation_required",
+                    "executed": False,
+                    "message": "La aplicación requiere confirmación explícita.",
+                    "recommended_action": (
+                        "Usa confirmation='APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE'."
+                    ),
+                }
             )
         encoded = base64.b64encode(gzip.compress(path.read_bytes())).decode("ascii")
         if profile.remote_platform is RemotePlatform.WINDOWS:
@@ -613,38 +762,48 @@ class KindService:
                 "$c=$LASTEXITCODE;Remove-Item -LiteralPath $p -Force;exit $c"
             )
             remote_command = [
-                "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", remote_script
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                remote_script,
             ]
         else:
             remote_script = (
                 "p=$(mktemp /tmp/mcp-kind-manifest.XXXXXX.yaml);"
                 f"printf '%s' '{encoded}' | base64 -d | gzip -d >\"$p\";"
-                f"kubectl --context kind-{cluster_name} apply --namespace {namespace} -f \"$p\";"
-                "c=$?;rm -f \"$p\";exit $c"
+                f'kubectl --context kind-{cluster_name} apply --namespace {namespace} -f "$p";'
+                'c=$?;rm -f "$p";exit $c'
             )
             remote_command = ["sh", "-c", remote_script]
         try:
             result = await self._remote(profile, *remote_command, timeout_seconds=120.0)
         except TimeoutError:
             return KindManifestApplyResult.model_validate(
-                {**base, "state": "operation_failed", "executed": False,
-                 "message": "kubectl agotó el tiempo de espera.",
-                 "recommended_action": "Revisa el estado del cluster y reintenta."}
+                {
+                    **base,
+                    "state": "operation_failed",
+                    "executed": False,
+                    "message": "kubectl agotó el tiempo de espera.",
+                    "recommended_action": "Revisa el estado del cluster y reintenta.",
+                }
             )
         success = result.returncode == 0
         return KindManifestApplyResult.model_validate(
-            {**base,
-             "state": "applied" if success else "operation_failed",
-             "executed": success,
-             "message": (
-                 "Manifiesto aplicado correctamente."
-                 if success
-                 else "kubectl no pudo aplicar el manifiesto."
-             ),
-             "diagnostic": self._sanitize_diagnostic(result.stderr or result.stdout),
-             "recommended_action": (
-                 None if success else "Revisa el diagnóstico y el namespace remoto."
-             )}
+            {
+                **base,
+                "state": "applied" if success else "operation_failed",
+                "executed": success,
+                "message": (
+                    "Manifiesto aplicado correctamente."
+                    if success
+                    else "kubectl no pudo aplicar el manifiesto."
+                ),
+                "diagnostic": self._sanitize_diagnostic(result.stderr or result.stdout),
+                "recommended_action": (
+                    None if success else "Revisa el diagnóstico y el namespace remoto."
+                ),
+            }
         )
 
     async def install_ingress_controller(
@@ -660,8 +819,16 @@ class KindService:
 
         path = Path(manifest_path).expanduser().resolve()
         preview = [
-            "ssh", "<ssh-profile>", "kubectl", "--context", f"kind-{cluster_name}",
-            "apply", "--namespace", namespace, "-f", "-",
+            "ssh",
+            "<ssh-profile>",
+            "kubectl",
+            "--context",
+            f"kind-{cluster_name}",
+            "apply",
+            "--namespace",
+            namespace,
+            "-f",
+            "-",
         ]
         base: dict[str, Any] = {
             "profile_id": profile_id,
@@ -672,39 +839,52 @@ class KindService:
         }
         if not (_SAFE_NAME.fullmatch(cluster_name) and _SAFE_NAME.fullmatch(namespace)):
             return KindIngressControllerResult(
-                **base, state="validation_failed", executed=False,
+                **base,
+                state="validation_failed",
+                executed=False,
                 message="El clúster o namespace contiene caracteres no permitidos.",
             )
         if not path.is_file():
             return KindIngressControllerResult(
-                **base, state="validation_failed", executed=False,
+                **base,
+                state="validation_failed",
+                executed=False,
                 message="El manifiesto del controlador Ingress no existe.",
             )
         content = path.read_text(encoding="utf-8")
         if "kind: Deployment" not in content or "ingress-nginx" not in content:
             return KindIngressControllerResult(
-                **base, state="validation_failed", executed=False,
+                **base,
+                state="validation_failed",
+                executed=False,
                 message="El manifiesto debe contener un Deployment del controlador ingress-nginx.",
                 recommended_action="Usa un manifiesto offline autorizado del controlador NGINX.",
             )
         if dry_run:
             return KindIngressControllerResult(
-                **base, state="planned", executed=False,
+                **base,
+                state="planned",
+                executed=False,
                 message=(
-                    "Instalación del controlador Ingress planificada; "
-                    "el cluster no fue modificado."
+                    "Instalación del controlador Ingress planificada; el cluster no fue modificado."
                 ),
                 recommended_action=f"Confirma con {INGRESS_CONTROLLER_CONFIRMATION} para ejecutar.",
             )
         if confirmation != INGRESS_CONTROLLER_CONFIRMATION:
             return KindIngressControllerResult(
-                **base, state="confirmation_required", executed=False,
+                **base,
+                state="confirmation_required",
+                executed=False,
                 message="La instalación del controlador Ingress requiere confirmación explícita.",
                 recommended_action=f"Usa confirmation='{INGRESS_CONTROLLER_CONFIRMATION}'.",
             )
         applied = await self.apply_manifest(
-            profile_id, cluster_name, str(path), namespace,
-            dry_run=False, confirmation="APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE",
+            profile_id,
+            cluster_name,
+            str(path),
+            namespace,
+            dry_run=False,
+            confirmation="APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE",
         )
         return KindIngressControllerResult(
             **base,
@@ -712,7 +892,8 @@ class KindService:
             executed=applied.executed,
             message=(
                 "Controlador Ingress instalado correctamente."
-                if applied.executed else applied.message
+                if applied.executed
+                else applied.message
             ),
             diagnostic=applied.diagnostic,
             recommended_action=applied.recommended_action,
@@ -732,12 +913,14 @@ class KindService:
             workload_name=workload_name,
         )
         if not all(
-            _SAFE_NAME.fullmatch(value)
-            for value in (cluster_name, workload_name, namespace)
+            _SAFE_NAME.fullmatch(value) for value in (cluster_name, workload_name, namespace)
         ):
             return KindWorkloadInspectResult.model_validate(
-                {**base, "connected": False,
-                 "message": "El cluster, workload o namespace no cumple el formato permitido."}
+                {
+                    **base,
+                    "connected": False,
+                    "message": "El cluster, workload o namespace no cumple el formato permitido.",
+                }
             )
         listed = await self.list_clusters(profile_id)
         cluster = next((item for item in listed.clusters if item.name == cluster_name), None)
@@ -752,28 +935,68 @@ class KindService:
                 {**base, "connected": False, "message": "El cluster o perfil no está disponible."}
             )
         deployment = await self._remote(
-            profile, "kubectl", "--context", f"kind-{cluster_name}", "get",
-            "deployment", workload_name, "--namespace", namespace, "-o", "json",
+            profile,
+            "kubectl",
+            "--context",
+            f"kind-{cluster_name}",
+            "get",
+            "deployment",
+            workload_name,
+            "--namespace",
+            namespace,
+            "-o",
+            "json",
         )
         pods = await self._remote(
-            profile, "kubectl", "--context", f"kind-{cluster_name}", "get",
-            "pods", "--namespace", namespace, "-l", f"app={workload_name}", "-o", "json",
+            profile,
+            "kubectl",
+            "--context",
+            f"kind-{cluster_name}",
+            "get",
+            "pods",
+            "--namespace",
+            namespace,
+            "-l",
+            f"app={workload_name}",
+            "-o",
+            "json",
         )
         service = await self._remote(
-            profile, "kubectl", "--context", f"kind-{cluster_name}", "get",
-            "service", workload_name, "--namespace", namespace, "-o", "json",
+            profile,
+            "kubectl",
+            "--context",
+            f"kind-{cluster_name}",
+            "get",
+            "service",
+            workload_name,
+            "--namespace",
+            namespace,
+            "-o",
+            "json",
         )
         events = await self._remote(
-            profile, "kubectl", "--context", f"kind-{cluster_name}", "get", "events",
-            "--namespace", namespace, "--sort-by=.lastTimestamp", "-o", "json",
+            profile,
+            "kubectl",
+            "--context",
+            f"kind-{cluster_name}",
+            "get",
+            "events",
+            "--namespace",
+            namespace,
+            "--sort-by=.lastTimestamp",
+            "-o",
+            "json",
         )
         if deployment.returncode != 0:
             return KindWorkloadInspectResult.model_validate(
-                {**base, "connected": True,
-                 "message": "El Deployment no existe o kubectl no pudo consultarlo.",
-                 "recommended_action": (
-                     "Revisa el manifiesto aplicado y los eventos del namespace."
-                 )}
+                {
+                    **base,
+                    "connected": True,
+                    "message": "El Deployment no existe o kubectl no pudo consultarlo.",
+                    "recommended_action": (
+                        "Revisa el manifiesto aplicado y los eventos del namespace."
+                    ),
+                }
             )
         deployment_data = self._parse_json(deployment.stdout)
         pods_data = self._parse_json(pods.stdout)
@@ -781,25 +1004,30 @@ class KindService:
         status = deployment_data.get("status", {}) if isinstance(deployment_data, dict) else {}
         pod_items = pods_data.get("items", []) if isinstance(pods_data, dict) else []
         pod_records = [
-            {"name": item.get("metadata", {}).get("name"),
-             "phase": item.get("status", {}).get("phase"),
-             "reason": item.get("status", {}).get("reason"),
-             "message": item.get("status", {}).get("message"),
-             "node": item.get("spec", {}).get("nodeName"),
-             "ready": any(
-                 condition.get("type") == "Ready" and condition.get("status") == "True"
-                 for condition in item.get("status", {}).get("conditions", [])
-             )}
-            for item in pod_items if isinstance(item, dict)
+            {
+                "name": item.get("metadata", {}).get("name"),
+                "phase": item.get("status", {}).get("phase"),
+                "reason": item.get("status", {}).get("reason"),
+                "message": item.get("status", {}).get("message"),
+                "node": item.get("spec", {}).get("nodeName"),
+                "ready": any(
+                    condition.get("type") == "Ready" and condition.get("status") == "True"
+                    for condition in item.get("status", {}).get("conditions", [])
+                ),
+            }
+            for item in pod_items
+            if isinstance(item, dict)
         ]
         service_records = []
         if isinstance(service_data, dict) and service_data.get("metadata"):
-            service_records.append({
-                "name": service_data.get("metadata", {}).get("name"),
-                "type": service_data.get("spec", {}).get("type"),
-                "cluster_ip": service_data.get("spec", {}).get("clusterIP"),
-                "ports": service_data.get("spec", {}).get("ports", []),
-            })
+            service_records.append(
+                {
+                    "name": service_data.get("metadata", {}).get("name"),
+                    "type": service_data.get("spec", {}).get("type"),
+                    "cluster_ip": service_data.get("spec", {}).get("clusterIP"),
+                    "ports": service_data.get("spec", {}).get("ports", []),
+                }
+            )
         event_items = self._parse_json(events.stdout).get("items", [])
         event_records = [
             {
@@ -809,18 +1037,29 @@ class KindService:
                 "object": item.get("involvedObject", {}).get("name"),
                 "count": item.get("count"),
             }
-            for item in event_items[-10:] if isinstance(item, dict)
+            for item in event_items[-10:]
+            if isinstance(item, dict)
         ]
         ready = int(status.get("readyReplicas", 0) or 0)
         desired = int(status.get("replicas", 0) or 0)
         return KindWorkloadInspectResult(
-            **base, connected=True, deployment_ready=ready, deployment_desired=desired,
-            pod_records=pod_records, service_records=service_records,
+            **base,
+            connected=True,
+            deployment_ready=ready,
+            deployment_desired=desired,
+            pod_records=pod_records,
+            service_records=service_records,
             event_records=event_records,
-            message=("Workload listo." if ready >= desired and desired > 0
-                     else "Workload creado, pero aún no está listo."),
-            recommended_action=(None if ready >= desired and desired > 0
-                                else "Revisa los pods y eventos del workload."),
+            message=(
+                "Workload listo."
+                if ready >= desired and desired > 0
+                else "Workload creado, pero aún no está listo."
+            ),
+            recommended_action=(
+                None
+                if ready >= desired and desired > 0
+                else "Revisa los pods y eventos del workload."
+            ),
         )
 
     async def pod_logs(
@@ -833,45 +1072,65 @@ class KindService:
     ) -> KindPodLogsResult:
         """Read a bounded, redacted log tail through the authorized profile."""
         base: dict[str, Any] = dict(
-            profile_id=profile_id, cluster_name=cluster_name,
-            namespace=namespace, pod_name=pod_name,
+            profile_id=profile_id,
+            cluster_name=cluster_name,
+            namespace=namespace,
+            pod_name=pod_name,
         )
-        if (not all(_SAFE_NAME.fullmatch(value) for value in
-                    (cluster_name, namespace, pod_name)) or
-                not isinstance(tail, int) or not 1 <= tail <= 500):
+        if (
+            not all(_SAFE_NAME.fullmatch(value) for value in (cluster_name, namespace, pod_name))
+            or not isinstance(tail, int)
+            or not 1 <= tail <= 500
+        ):
             return KindPodLogsResult(
-                **base, connected=False,
+                **base,
+                connected=False,
                 message="El cluster, pod, namespace o tail no cumple el formato permitido.",
             )
         profile, error = await self._authorized_profile(profile_id)
         if error is not None or profile is None:
             return KindPodLogsResult(
-                **base, connected=False, message=error or "Perfil no disponible.",
+                **base,
+                connected=False,
+                message=error or "Perfil no disponible.",
             )
         listed = await self.list_clusters(profile_id)
         cluster = next((item for item in listed.clusters if item.name == cluster_name), None)
         if cluster is None or not cluster.reachable:
             return KindPodLogsResult(
-                **base, connected=False,
+                **base,
+                connected=False,
                 message="El clúster solicitado no existe o no es alcanzable.",
             )
         try:
             result = await self._remote(
-                profile, "kubectl", "--context", f"kind-{cluster_name}",
-                "--namespace", namespace, "logs", pod_name, "--tail", str(tail),
+                profile,
+                "kubectl",
+                "--context",
+                f"kind-{cluster_name}",
+                "--namespace",
+                namespace,
+                "logs",
+                pod_name,
+                "--tail",
+                str(tail),
             )
         except (FileNotFoundError, TimeoutError):
             return KindPodLogsResult(
-                **base, connected=True, message="No se pudieron obtener los logs del pod.",
+                **base,
+                connected=True,
+                message="No se pudieron obtener los logs del pod.",
             )
         if result.returncode != 0:
             return KindPodLogsResult(
-                **base, connected=True,
+                **base,
+                connected=True,
                 message="kubectl no pudo obtener los logs del pod.",
                 diagnostic=self._sanitize_diagnostic(result.stderr or result.stdout),
             )
         return KindPodLogsResult(
-            **base, connected=True,
+            **base,
+            connected=True,
             lines=[self._redact_log_line(line) for line in result.stdout.splitlines()],
             message="Logs obtenidos correctamente.",
         )
@@ -906,16 +1165,18 @@ class KindService:
         if "DATABASE_URL" in keys and "DATABASE_URL" not in values:
             mysql = self._read_env_keys(Path(env_file).expanduser().resolve(), ["MYSQL_DATABASE"])
             if mysql.get("MYSQL_DATABASE"):
-                values["DATABASE_URL"] = (
-                    "jdbc:mysql://mysql:3306/" + mysql["MYSQL_DATABASE"]
-                )
+                values["DATABASE_URL"] = "jdbc:mysql://mysql:3306/" + mysql["MYSQL_DATABASE"]
         missing = [key for key in keys if key not in values]
         if missing:
             raise ValueError(f"Missing requested environment keys: {', '.join(missing)}")
         lines = [
-            "apiVersion: v1", "kind: Secret", "metadata:",
-            f"  name: {secret_name}", f"  namespace: {namespace}",
-            "type: Opaque", "data:",
+            "apiVersion: v1",
+            "kind: Secret",
+            "metadata:",
+            f"  name: {secret_name}",
+            f"  namespace: {namespace}",
+            "type: Opaque",
+            "data:",
         ]
         lines.extend(f"  {key}: {base64.b64encode(values[key].encode()).decode()}" for key in keys)
         temporary: Path | None = None
@@ -968,10 +1229,23 @@ class KindService:
         """Plan or install the allowlisted Prometheus Operator Helm chart."""
 
         preview = [
-            "helm", "repo", "add", "prometheus-community", PROMETHEUS_STACK_REPO,
-            "--force-update", "&&", "helm", "upgrade", "--install", release_name,
-            PROMETHEUS_STACK_CHART, "--namespace", namespace, "--create-namespace",
-            "--set", "prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false",
+            "helm",
+            "repo",
+            "add",
+            "prometheus-community",
+            PROMETHEUS_STACK_REPO,
+            "--force-update",
+            "&&",
+            "helm",
+            "upgrade",
+            "--install",
+            release_name,
+            PROMETHEUS_STACK_CHART,
+            "--namespace",
+            namespace,
+            "--create-namespace",
+            "--set",
+            "prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false",
         ]
         base: dict[str, Any] = dict(
             profile_id=profile_id,
@@ -981,23 +1255,32 @@ class KindService:
             namespace=namespace,
             command_preview=preview,
         )
-        if not (_SAFE_NAME.fullmatch(cluster_name) and _SAFE_NAME.fullmatch(release_name)
-                and _SAFE_NAME.fullmatch(namespace)):
+        if not (
+            _SAFE_NAME.fullmatch(cluster_name)
+            and _SAFE_NAME.fullmatch(release_name)
+            and _SAFE_NAME.fullmatch(namespace)
+        ):
             return KindHelmReleaseResult(
-                **base, state="validation_failed", executed=False,
+                **base,
+                state="validation_failed",
+                executed=False,
                 message="El clúster, release o namespace contiene caracteres no permitidos.",
                 recommended_action="Usa nombres en minúsculas, números, puntos o guiones.",
             )
         profile, error = await self._authorized_profile(profile_id)
         if error is not None or profile is None:
             return KindHelmReleaseResult(
-                **base, state="connection_failed", executed=False,
+                **base,
+                state="connection_failed",
+                executed=False,
                 message=error or "Perfil no disponible.",
                 recommended_action="Valida el perfil autorizado antes de instalar Helm.",
             )
         if not dry_run and confirmation != HELM_RELEASE_CONFIRMATION:
             return KindHelmReleaseResult(
-                **base, state="confirmation_required", executed=False,
+                **base,
+                state="confirmation_required",
+                executed=False,
                 message="La instalación Helm requiere confirmación explícita.",
                 recommended_action=f"Proporciona confirmation={HELM_RELEASE_CONFIRMATION}.",
             )
@@ -1005,7 +1288,9 @@ class KindService:
         cluster = next((item for item in clusters.clusters if item.name == cluster_name), None)
         if cluster is None or not cluster.reachable:
             return KindHelmReleaseResult(
-                **base, state="cluster_unavailable", executed=False,
+                **base,
+                state="cluster_unavailable",
+                executed=False,
                 message="El clúster solicitado no existe o no es alcanzable.",
                 recommended_action="Lista los clústeres y selecciona uno alcanzable.",
             )
@@ -1013,50 +1298,75 @@ class KindService:
             helm = await self._remote(profile, "helm", "version", "--short")
         except (FileNotFoundError, TimeoutError):
             return KindHelmReleaseResult(
-                **base, state="prerequisites_failed", executed=False,
+                **base,
+                state="prerequisites_failed",
+                executed=False,
                 message="No se pudo validar Helm en el host remoto.",
                 recommended_action="Instala Helm en el host remoto y vuelve a intentar.",
             )
         if helm.returncode != 0:
             return KindHelmReleaseResult(
-                **base, state="prerequisites_failed", executed=False,
+                **base,
+                state="prerequisites_failed",
+                executed=False,
                 message="Helm no está disponible en el host remoto.",
                 diagnostic=self._sanitize_diagnostic(helm.stderr),
                 recommended_action="Instala Helm en el host remoto y vuelve a intentar.",
             )
         if dry_run:
             return KindHelmReleaseResult(
-                **base, state="planned", executed=False,
+                **base,
+                state="planned",
+                executed=False,
                 message="Instalación Helm planificada; no se ejecutó ningún cambio.",
                 recommended_action=f"Confirma con {HELM_RELEASE_CONFIRMATION} para ejecutar.",
             )
         commands = [
             (
-                "helm", "repo", "add", "prometheus-community", PROMETHEUS_STACK_REPO,
+                "helm",
+                "repo",
+                "add",
+                "prometheus-community",
+                PROMETHEUS_STACK_REPO,
                 "--force-update",
             ),
-            ("helm", "upgrade", "--install", release_name, PROMETHEUS_STACK_CHART,
-             "--namespace", namespace, "--create-namespace",
-             "--set", "prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false"),
+            (
+                "helm",
+                "upgrade",
+                "--install",
+                release_name,
+                PROMETHEUS_STACK_CHART,
+                "--namespace",
+                namespace,
+                "--create-namespace",
+                "--set",
+                "prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false",
+            ),
         ]
         for command in commands:
             try:
                 result = await self._remote(profile, *command)
             except (FileNotFoundError, TimeoutError):
                 return KindHelmReleaseResult(
-                    **base, state="execution_failed", executed=False,
+                    **base,
+                    state="execution_failed",
+                    executed=False,
                     message="No se pudo ejecutar la operación Helm remota.",
                     recommended_action="Verifica la conexión y el acceso al registry de charts.",
                 )
             if result.returncode != 0:
                 return KindHelmReleaseResult(
-                    **base, state="execution_failed", executed=False,
+                    **base,
+                    state="execution_failed",
+                    executed=False,
                     message="Helm no pudo instalar el release.",
                     diagnostic=self._sanitize_diagnostic(result.stderr or result.stdout),
                     recommended_action="Revisa Helm y la conectividad al repositorio de charts.",
                 )
         return KindHelmReleaseResult(
-            **base, state="installed", executed=True,
+            **base,
+            state="installed",
+            executed=True,
             message="Release Helm instalado correctamente.",
         )
 
@@ -1074,41 +1384,69 @@ class KindService:
         """Start a controlled Windows remote kubectl port-forward."""
 
         preview = [
-            "ssh", "<ssh-profile>", "-N", "-L", f"{local_port}:127.0.0.1:{remote_port}",
-            "kubectl", "--context", f"kind-{cluster_name}", "--namespace", namespace,
-            "port-forward", f"service/{service_name}", f"{remote_port}:{remote_port}",
-            "--address", "127.0.0.1",
+            "ssh",
+            "<ssh-profile>",
+            "-N",
+            "-L",
+            f"{local_port}:127.0.0.1:{remote_port}",
+            "kubectl",
+            "--context",
+            f"kind-{cluster_name}",
+            "--namespace",
+            namespace,
+            "port-forward",
+            f"service/{service_name}",
+            f"{remote_port}:{remote_port}",
+            "--address",
+            "127.0.0.1",
         ]
         base: dict[str, Any] = dict(
-            profile_id=profile_id, cluster_name=cluster_name, namespace=namespace,
-            service_name=service_name, local_port=local_port, remote_port=remote_port,
+            profile_id=profile_id,
+            cluster_name=cluster_name,
+            namespace=namespace,
+            service_name=service_name,
+            local_port=local_port,
+            remote_port=remote_port,
             command_preview=preview,
         )
-        valid_ports = all(isinstance(port, int) and 1024 <= port <= 65535
-                          for port in (local_port, remote_port))
-        if not (_SAFE_NAME.fullmatch(cluster_name) and _SAFE_NAME.fullmatch(namespace)
-                and _SAFE_NAME.fullmatch(service_name) and valid_ports):
+        valid_ports = all(
+            isinstance(port, int) and 1024 <= port <= 65535 for port in (local_port, remote_port)
+        )
+        if not (
+            _SAFE_NAME.fullmatch(cluster_name)
+            and _SAFE_NAME.fullmatch(namespace)
+            and _SAFE_NAME.fullmatch(service_name)
+            and valid_ports
+        ):
             return KindPortForwardResult(
-                **base, state="validation_failed", executed=False,
+                **base,
+                state="validation_failed",
+                executed=False,
                 message="Servicio, namespace o puertos inválidos.",
                 recommended_action="Usa nombres seguros y puertos entre 1024 y 65535.",
             )
         profile, error = await self._authorized_profile(profile_id)
         if error is not None or profile is None:
             return KindPortForwardResult(
-                **base, state="connection_failed", executed=False,
+                **base,
+                state="connection_failed",
+                executed=False,
                 message=error or "Perfil no disponible.",
                 recommended_action="Valida el perfil autorizado antes de abrir el port-forward.",
             )
         if profile.remote_platform != RemotePlatform.WINDOWS:
             return KindPortForwardResult(
-                **base, state="unsupported_platform", executed=False,
+                **base,
+                state="unsupported_platform",
+                executed=False,
                 message="El port-forward controlado requiere el host remoto Windows autorizado.",
                 recommended_action="Usa el perfil Windows docker-remote1.",
             )
         if not dry_run and confirmation != PORT_FORWARD_CONFIRMATION:
             return KindPortForwardResult(
-                **base, state="confirmation_required", executed=False,
+                **base,
+                state="confirmation_required",
+                executed=False,
                 message="Abrir el port-forward requiere confirmación explícita.",
                 recommended_action=f"Proporciona confirmation={PORT_FORWARD_CONFIRMATION}.",
             )
@@ -1116,13 +1454,17 @@ class KindService:
         cluster = next((item for item in clusters.clusters if item.name == cluster_name), None)
         if cluster is None or not cluster.reachable:
             return KindPortForwardResult(
-                **base, state="cluster_unavailable", executed=False,
+                **base,
+                state="cluster_unavailable",
+                executed=False,
                 message="El clúster solicitado no existe o no es alcanzable.",
                 recommended_action="Lista los clústeres y selecciona uno alcanzable.",
             )
         if dry_run:
             return KindPortForwardResult(
-                **base, state="planned", executed=False,
+                **base,
+                state="planned",
+                executed=False,
                 message="Port-forward planificado; no se abrió ningún proceso.",
                 recommended_action=f"Confirma con {PORT_FORWARD_CONFIRMATION} para ejecutar.",
             )
@@ -1138,14 +1480,18 @@ class KindService:
             result = await self._runner.run(["sh", "-lc", script], 10.0)
         except (TimeoutError, OSError) as error:
             return KindPortForwardResult(
-                **base, state="execution_failed", executed=False,
+                **base,
+                state="execution_failed",
+                executed=False,
                 message="No se pudo iniciar el port-forward remoto.",
                 diagnostic=f"{type(error).__name__}",
                 recommended_action="Verifica kubectl y el perfil remoto.",
             )
         if result.returncode != 0:
             return KindPortForwardResult(
-                **base, state="execution_failed", executed=False,
+                **base,
+                state="execution_failed",
+                executed=False,
                 message="No se pudo iniciar el port-forward remoto.",
                 diagnostic=self._sanitize_diagnostic(result.stderr or result.stdout),
                 recommended_action="Revisa el servicio y el puerto remoto.",
@@ -1154,12 +1500,17 @@ class KindService:
             pid = int(result.stdout.strip().splitlines()[-1])
         except (ValueError, IndexError):
             return KindPortForwardResult(
-                **base, state="execution_failed", executed=False,
+                **base,
+                state="execution_failed",
+                executed=False,
                 message="El port-forward se inició sin devolver un PID válido.",
                 recommended_action="Revisa el proceso kubectl en el host remoto.",
             )
         return KindPortForwardResult(
-            **base, state="started", executed=True, pid=pid,
+            **base,
+            state="started",
+            executed=True,
+            pid=pid,
             endpoint=f"127.0.0.1:{local_port}",
             message="Port-forward iniciado correctamente.",
             recommended_action=f"Cierra el proceso con stop_kind_port_forward(pid={pid}).",
@@ -1171,24 +1522,34 @@ class KindService:
         """Stop one remote port-forward process previously returned by this MCP."""
 
         base: dict[str, Any] = dict(
-            profile_id=profile_id, cluster_name="", namespace="", service_name="",
-            local_port=0, remote_port=0,
+            profile_id=profile_id,
+            cluster_name="",
+            namespace="",
+            service_name="",
+            local_port=0,
+            remote_port=0,
             command_preview=["Stop-Process", "-Id", str(pid), "-Force"],
         )
         if not isinstance(pid, int) or pid <= 0:
             return KindPortForwardResult(
-                **base, state="validation_failed", executed=False,
+                **base,
+                state="validation_failed",
+                executed=False,
                 message="El PID no es válido.",
             )
         profile, error = await self._authorized_profile(profile_id)
         if error is not None or profile is None:
             return KindPortForwardResult(
-                **base, state="connection_failed", executed=False,
+                **base,
+                state="connection_failed",
+                executed=False,
                 message=error or "Perfil no disponible.",
             )
         if confirmation != STOP_PORT_FORWARD_CONFIRMATION:
             return KindPortForwardResult(
-                **base, state="confirmation_required", executed=False,
+                **base,
+                state="confirmation_required",
+                executed=False,
                 message="Cerrar el port-forward requiere confirmación explícita.",
                 recommended_action=f"Proporciona confirmation={STOP_PORT_FORWARD_CONFIRMATION}.",
             )
@@ -1197,18 +1558,25 @@ class KindService:
             result = await self._runner.run(["sh", "-lc", script], 10.0)
         except (TimeoutError, OSError) as error:
             return KindPortForwardResult(
-                **base, state="execution_failed", executed=False,
+                **base,
+                state="execution_failed",
+                executed=False,
                 message="No se pudo cerrar el port-forward remoto.",
                 diagnostic=f"{type(error).__name__}",
             )
         if result.returncode != 0:
             return KindPortForwardResult(
-                **base, state="execution_failed", executed=False,
+                **base,
+                state="execution_failed",
+                executed=False,
                 message="No se pudo cerrar el port-forward remoto.",
                 diagnostic=self._sanitize_diagnostic(result.stderr or result.stdout),
             )
         return KindPortForwardResult(
-            **base, state="stopped", executed=True, pid=pid,
+            **base,
+            state="stopped",
+            executed=True,
+            pid=pid,
             message="Port-forward cerrado correctamente.",
         )
 
@@ -1405,8 +1773,7 @@ class KindService:
         normalized = stderr.lower()
         if "command not found" in normalized or "not recognized" in normalized:
             return (
-                "El comando kind no está instalado o no está disponible en PATH "
-                "en el host remoto."
+                "El comando kind no está instalado o no está disponible en PATH en el host remoto."
             )
         if "permission denied" in normalized or "publickey" in normalized:
             return "El host remoto rechazó la autenticación SSH para consultar Kind."

@@ -46,8 +46,8 @@ from .service import MCP_DOCUMENTATION_HINT, ConnectionProfileService, default_p
 mcp = MCPServer(
     "mcp-connection-synsfuture",
     instructions=(
-    "Manage local connection-profile metadata and validate preconfigured contexts. "
-    "The MCP never creates SSH keys, modifies SSH aliases, or changes remote infrastructure. "
+        "Manage local connection-profile metadata and validate preconfigured contexts. "
+        "The MCP never creates SSH keys, modifies SSH aliases, or changes remote infrastructure. "
         "mentions only this MCP without naming a tool, explain that no tool was "
         "selected and show this example: "
         "mcp-connection-synsfuture.connect_connection_profile(profile_id='docker-remote1'). "
@@ -149,7 +149,7 @@ async def connect_connection_profile(profile_id: str | None = None) -> Connectio
             message=(
                 "Falta el parámetro profile_id. Es el identificador del perfil de conexión "
                 "preconfigurado que representa el Docker context o perfil SSH que deseas "
-                "validar. Ejemplo: profile_id=\"docker-remote1\"."
+                'validar. Ejemplo: profile_id="docker-remote1".'
             ),
             recommended_action=(
                 "Indica un profile_id explícito o usa register_connection_profile para "
@@ -254,6 +254,7 @@ async def create_kind_cluster(
     cluster_name: str,
     dry_run: bool = True,
     confirmation: str | None = None,
+    config_path: str | None = None,
 ) -> KindClusterCreateResult:
     """Plan or create a remote Kind cluster after explicit confirmation.
 
@@ -262,6 +263,20 @@ async def create_kind_cluster(
     """
 
     return await create_kind_service().create_cluster(
+        profile_id, cluster_name, dry_run, confirmation, config_path
+    )
+
+
+@mcp.tool(name="delete_kind_cluster", annotations=REMOTE_DESTRUCTIVE)
+async def delete_kind_cluster(
+    profile_id: str,
+    cluster_name: str,
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> KindClusterCreateResult:
+    """Plan or delete a remote Kind cluster after explicit confirmation."""
+
+    return await create_kind_service().delete_cluster(
         profile_id, cluster_name, dry_run, confirmation
     )
 
@@ -374,8 +389,14 @@ async def start_kind_port_forward(
     """Plan or start a controlled remote port-forward for a Kind Service."""
 
     return await create_kind_service().start_port_forward(
-        profile_id, cluster_name, service_name, namespace,
-        local_port, remote_port, dry_run, confirmation
+        profile_id,
+        cluster_name,
+        service_name,
+        namespace,
+        local_port,
+        remote_port,
+        dry_run,
+        confirmation,
     )
 
 
@@ -412,9 +433,7 @@ async def inspect_kind_pod_logs(
 ) -> KindPodLogsResult:
     """Read a bounded, redacted log tail from a pod through the authorized Kind profile."""
 
-    return await create_kind_service().pod_logs(
-        profile_id, cluster_name, pod_name, namespace, tail
-    )
+    return await create_kind_service().pod_logs(profile_id, cluster_name, pod_name, namespace, tail)
 
 
 @mcp.tool(name="apply_kind_secret_from_env", annotations=REMOTE_MUTATION)
@@ -568,8 +587,11 @@ async def compose_ps_docker(
 
 @mcp.tool(name="compose_logs_docker", annotations=READ_ONLY_EXTERNAL)
 async def compose_logs_docker(
-    profile_id: str, project_path: str, compose_file: str | None = None, tail: int = 100,
-    env_file: str | None = None
+    profile_id: str,
+    project_path: str,
+    compose_file: str | None = None,
+    tail: int = 100,
+    env_file: str | None = None,
 ) -> ComposeReadResult:
     """Return bounded and redacted Compose logs as untrusted data."""
 
@@ -660,7 +682,8 @@ async def plan_compose_deployment_docker(
         profile_id,
         "up",
         project_path,
-        compose_file, env_file,
+        compose_file,
+        env_file,
         confirmation=None,
         dry_run=True,
     )
