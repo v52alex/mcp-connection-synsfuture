@@ -29,6 +29,7 @@ from .models import (
     KindClusterListResult,
     KindHelmReleaseResult,
     KindImageLoadResult,
+    KindIngressControllerResult,
     KindManifestApplyResult,
     KindNamespaceEnsureResult,
     KindPodLogsResult,
@@ -339,6 +340,22 @@ async def apply_kind_manifest(
     """Plan or apply a local Kubernetes manifest through an authorized Kind profile."""
 
     return await create_kind_service().apply_manifest(
+        profile_id, cluster_name, manifest_path, namespace, dry_run, confirmation
+    )
+
+
+@mcp.tool(name="install_kind_ingress_controller", annotations=REMOTE_MUTATION)
+async def install_kind_ingress_controller(
+    profile_id: str,
+    cluster_name: str,
+    manifest_path: str,
+    namespace: str = "ingress-nginx",
+    dry_run: bool = True,
+    confirmation: str | None = None,
+) -> KindIngressControllerResult:
+    """Plan or install an offline NGINX Ingress controller through an authorized profile."""
+
+    return await create_kind_service().install_ingress_controller(
         profile_id, cluster_name, manifest_path, namespace, dry_run, confirmation
     )
 

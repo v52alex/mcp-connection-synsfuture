@@ -17,6 +17,7 @@ from .models import (
     KindClusterSummary,
     KindHelmReleaseResult,
     KindImageLoadResult,
+    KindIngressControllerResult,
     KindManifestApplyResult,
     KindNamespaceEnsureResult,
     KindPodLogsResult,
@@ -35,6 +36,7 @@ LOAD_IMAGES_CONFIRMATION = "LOAD_IMAGES_TO_KIND_ON_WINDOWS_DOCKER"
 CREATE_CLUSTER_CONFIRMATION = "CREATE_KIND_CLUSTER_ON_DOCKER_REMOTE"
 ENSURE_NAMESPACE_CONFIRMATION = "ENSURE_KIND_NAMESPACE_ON_DOCKER_REMOTE"
 HELM_RELEASE_CONFIRMATION = "INSTALL_HELM_RELEASE_ON_DOCKER_REMOTE"
+INGRESS_CONTROLLER_CONFIRMATION = "INSTALL_KIND_INGRESS_CONTROLLER_ON_DOCKER_REMOTE"
 PORT_FORWARD_CONFIRMATION = "START_KIND_PORT_FORWARD_ON_DOCKER_REMOTE"
 STOP_PORT_FORWARD_CONFIRMATION = "STOP_KIND_PORT_FORWARD_ON_DOCKER_REMOTE"
 PROMETHEUS_STACK_CHART = "prometheus-community/kube-prometheus-stack"
@@ -639,6 +641,77 @@ class KindService:
              "recommended_action": (
                  None if success else "Revisa el diagnóstico y el namespace remoto."
              )}
+        )
+
+    async def install_ingress_controller(
+        self,
+        profile_id: str,
+        cluster_name: str,
+        manifest_path: str,
+        namespace: str = "ingress-nginx",
+        dry_run: bool = True,
+        confirmation: str | None = None,
+    ) -> KindIngressControllerResult:
+        """Apply a validated offline Ingress controller manifest through the profile."""
+
+        path = Path(manifest_path).expanduser().resolve()
+        preview = [
+            "ssh", "<ssh-profile>", "kubectl", "--context", f"kind-{cluster_name}",
+            "apply", "--namespace", namespace, "-f", "-",
+        ]
+        base: dict[str, Any] = {
+            "profile_id": profile_id,
+            "cluster_name": cluster_name,
+            "namespace": namespace,
+            "manifest_path": str(path),
+            "command_preview": preview,
+        }
+        if not (_SAFE_NAME.fullmatch(cluster_name) and _SAFE_NAME.fullmatch(namespace)):
+            return KindIngressControllerResult(
+                **base, state="validation_failed", executed=False,
+                message="El clúster o namespace contiene caracteres no permitidos.",
+            )
+        if not path.is_file():
+            return KindIngressControllerResult(
+                **base, state="validation_failed", executed=False,
+                message="El manifiesto del controlador Ingress no existe.",
+            )
+        content = path.read_text(encoding="utf-8")
+        if "kind: Deployment" not in content or "ingress-nginx" not in content:
+            return KindIngressControllerResult(
+                **base, state="validation_failed", executed=False,
+                message="El manifiesto debe contener un Deployment del controlador ingress-nginx.",
+                recommended_action="Usa un manifiesto offline autorizado del controlador NGINX.",
+            )
+        if dry_run:
+            return KindIngressControllerResult(
+                **base, state="planned", executed=False,
+                message=(
+                    "Instalación del controlador Ingress planificada; "
+                    "el cluster no fue modificado."
+                ),
+                recommended_action=f"Confirma con {INGRESS_CONTROLLER_CONFIRMATION} para ejecutar.",
+            )
+        if confirmation != INGRESS_CONTROLLER_CONFIRMATION:
+            return KindIngressControllerResult(
+                **base, state="confirmation_required", executed=False,
+                message="La instalación del controlador Ingress requiere confirmación explícita.",
+                recommended_action=f"Usa confirmation='{INGRESS_CONTROLLER_CONFIRMATION}'.",
+            )
+        applied = await self.apply_manifest(
+            profile_id, cluster_name, str(path), namespace,
+            dry_run=False, confirmation="APPLY_KIND_MANIFEST_ON_DOCKER_REMOTE",
+        )
+        return KindIngressControllerResult(
+            **base,
+            state="installed" if applied.executed else applied.state,
+            executed=applied.executed,
+            message=(
+                "Controlador Ingress instalado correctamente."
+                if applied.executed else applied.message
+            ),
+            diagnostic=applied.diagnostic,
+            recommended_action=applied.recommended_action,
         )
 
     async def inspect_workload(

@@ -106,6 +106,26 @@ async def test_load_image_is_dry_run_by_default(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_ingress_controller_requires_explicit_confirmation(tmp_path: Path) -> None:
+    manifest = tmp_path / "ingress-controller.yaml"
+    manifest.write_text(
+        "kind: Deployment\nmetadata:\n  name: ingress-nginx-controller\n",
+        encoding="utf-8",
+    )
+    service = KindService(StubRunner([]), profiles(tmp_path), FakeConnections())
+
+    result = await service.install_ingress_controller(
+        "docker-remote1", "microservices", str(manifest), dry_run=True
+    )
+
+    assert result.state == "planned"
+    assert result.executed is False
+    assert "INSTALL_KIND_INGRESS_CONTROLLER_ON_DOCKER_REMOTE" in (
+        result.recommended_action or ""
+    )
+
+
+@pytest.mark.asyncio
 async def test_prometheus_helm_release_is_dry_run_by_default(tmp_path: Path) -> None:
     runner = StubRunner(
         [
