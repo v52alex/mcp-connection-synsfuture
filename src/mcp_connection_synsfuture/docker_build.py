@@ -171,7 +171,9 @@ class DockerBuildService:
         lines = [line.strip() for line in stderr.splitlines() if line.strip()]
         if not lines:
             return None
-        diagnostic = " | ".join(lines[-4:])
+        markers = ("[error]", "failed to execute goal", "could not resolve", "build failure")
+        relevant = [line for line in lines if any(marker in line.lower() for marker in markers)]
+        diagnostic = " | ".join(relevant[-12:] if relevant else lines[-8:])
         diagnostic = re.sub(
             r"(?i)(password|passwd|secret|token|api[_-]?key)=([^\s]+)",
             r"\1=[REDACTED]",
